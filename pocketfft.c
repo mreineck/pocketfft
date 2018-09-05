@@ -1022,6 +1022,20 @@ void cfft_forward(cfft_plan plan, double c[])
     cfftblue_forward(plan->blueplan,c);
   }
 
+void cfft_backward_noplan(double c[], size_t length)
+  {
+  cfft_plan plan = make_cfft_plan (length);
+  cfft_backward (plan, c);
+  destroy_cfft_plan (plan);
+  }
+
+void cfft_forward_noplan(double c[], size_t length)
+  {
+  cfft_plan plan = make_cfft_plan (length);
+  cfft_forward (plan, c);
+  destroy_cfft_plan (plan);
+  }
+
 typedef struct rfft_plan_i
   {
   rfftp_plan packplan;
@@ -1067,4 +1081,18 @@ void rfft_forward(rfft_plan plan, double c[])
     rfftp_forward(plan->packplan,c);
   else if (plan->blueplan)
     rfftblue_forward(plan->blueplan,c);
+  }
+
+void rfft_backward_noplan(double c[], size_t length)
+  {
+  rfft_plan plan = make_rfft_plan (length);
+  rfft_backward (plan, c);
+  destroy_rfft_plan (plan);
+  }
+
+void rfft_forward_noplan(double c[], size_t length)
+  {
+  rfft_plan plan = make_rfft_plan (length);
+  rfft_forward (plan, c);
+  destroy_rfft_plan (plan);
   }

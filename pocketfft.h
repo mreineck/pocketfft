@@ -23,4 +23,9 @@ void rfft_forward(rfft_plan plan, double c[]);
 //void rfft_backward_with_work(rfft_plan plan, double c[], double w[]);
 //void rfft_forward_with_work(rfft_plan plan, double c[], double w[]);
 
+void cfft_backward_noplan(double c[], size_t length);
+void cfft_forward_noplan(double c[], size_t length);
+void rfft_backward_noplan(double c[], size_t length);
+void rfft_forward_noplan(double c[], size_t length);
+
 #endif
