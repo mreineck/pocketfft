@@ -428,7 +428,7 @@ static void X(_all)(cfftp_plan plan, cmplx c[])
   if (plan->length==1) return;
   size_t len=plan->length;
   size_t l1=1, nf=plan->nfct;
-  cmplx *ch=plan->wrk;
+  cmplx *ch = RALLOC(cmplx, len);
   cmplx *p1=c, *p2=ch;
 
   for(size_t k1=0; k1<nf; k1++)
@@ -448,6 +448,7 @@ static void X(_all)(cfftp_plan plan, cmplx c[])
     }
   if (p1!=c)
     memcpy (c,p1,len*sizeof(cmplx));
+  DEALLOC(ch);
   }
 
 #undef PSIGN

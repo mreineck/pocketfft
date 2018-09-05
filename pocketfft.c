@@ -12,7 +12,7 @@
 
 static double cost_guess (size_t n)
   {
-  const double lfp=1.1; // penalty for non-hardcoced larger factors
+  const double lfp=1.1; // penalty for non-hardcoded larger factors
   size_t ni=n;
   double result=0.;
   size_t tmp;
@@ -60,7 +60,6 @@ typedef struct cfftp_plan_i
   {
   size_t length, nfct;
   cmplx *mem;
-  cmplx *wrk;
   cfftp_fctdata fct[NFCT];
   } cfftp_plan_i;
 typedef struct cfftp_plan_i * cfftp_plan;
@@ -157,9 +156,8 @@ static cfftp_plan make_cfftp_plan (size_t length)
   if (length==1) return plan;
   cfftp_factorize (plan);
   size_t tws=cfftp_twsize(plan);
-  plan->mem=RALLOC(cmplx,tws+length);
+  plan->mem=RALLOC(cmplx,tws);
   cfftp_comp_twiddle(plan);
-  plan->wrk=plan->mem+tws;
   return plan;
   }
 
@@ -178,7 +176,7 @@ typedef struct rfftp_fctdata
 typedef struct rfftp_plan_i
   {
   size_t length, nfct;
-  double *mem, *wrk;
+  double *mem;
   rfftp_fctdata fct[NFCT];
   } rfftp_plan_i;
 typedef struct rfftp_plan_i * rfftp_plan;
@@ -670,7 +668,7 @@ static void rfftp_forward(rfftp_plan plan, double c[])
   if (plan->length==1) return;
   size_t n=plan->length;
   size_t l1=n, nf=plan->nfct;
-  double *ch=plan->wrk;
+  double *ch = RALLOC(double, n);
   double *p1=c, *p2=ch;
 
   for(size_t k1=0; k1<nf;++k1)
@@ -693,6 +691,7 @@ static void rfftp_forward(rfftp_plan plan, double c[])
     }
   if (p1!=c)
     memcpy (c,ch,n*sizeof(double));
+  DEALLOC(ch);
   }
 
 static void rfftp_backward(rfftp_plan plan, double c[])
@@ -700,7 +699,7 @@ static void rfftp_backward(rfftp_plan plan, double c[])
   if (plan->length==1) return;
   size_t n=plan->length;
   size_t l1=1, nf=plan->nfct;
-  double *ch=plan->wrk;
+  double *ch = RALLOC(double, n);
   double *p1=c, *p2=ch;
 
   for(size_t k=0; k<nf; k++)
@@ -722,6 +721,7 @@ static void rfftp_backward(rfftp_plan plan, double c[])
     }
   if (p1!=c)
     memcpy (c,ch,n*sizeof(double));
+  DEALLOC(ch);
   }
 
 static void rfftp_factorize (rfftp_plan plan)
@@ -804,8 +804,7 @@ static rfftp_plan make_rfftp_plan (size_t length)
   if (length==1) return plan;
   rfftp_factorize (plan);
   size_t tws=rfftp_comp_twsize(plan);
-  plan->mem=RALLOC(double,tws+plan->length);
-  plan->wrk=plan->mem+tws;
+  plan->mem=RALLOC(double,tws);
   rfftp_comp_twiddle(plan);
   return plan;
   }
@@ -821,7 +820,7 @@ typedef struct fftblue_plan_i
   size_t n, n2;
   cfftp_plan plan;
   double *mem;
-  double *bk, *bkf, *akf;
+  double *bk, *bkf;
   } fftblue_plan_i;
 typedef struct fftblue_plan_i * fftblue_plan;
 
@@ -830,10 +829,9 @@ static fftblue_plan make_fftblue_plan (size_t length)
   fftblue_plan plan = RALLOC(fftblue_plan_i,1);
   plan->n = length;
   plan->n2=good_size(plan->n*2-1);
-  plan->mem = RALLOC(double, 2*plan->n+4*plan->n2);
+  plan->mem = RALLOC(double, 2*plan->n+2*plan->n2);
   plan->bk  = plan->mem;
   plan->bkf = plan->bk+2*plan->n;
-  plan->akf = plan->bkf+2*plan->n2;
 
 /* initialize b_k */
   double *tmp = RALLOC(double,IMAX(4*plan->n,2*plan->n2));
@@ -881,7 +879,7 @@ static void fftblue_fft(fftblue_plan plan, double c[], int isign)
   size_t n2=plan->n2;
   double *bk  = plan->bk;
   double *bkf = plan->bkf;
-  double *akf = plan->akf;
+  double *akf = RALLOC(double, 2*n2);
 
 /* initialize a_k and FFT it */
   if (isign>0)
@@ -920,7 +918,7 @@ static void fftblue_fft(fftblue_plan plan, double c[], int isign)
 /* inverse FFT */
   cfftp_backward (plan->plan,akf);
 
-/* multiply by b_k* */
+/* multiply by b_k */
   if (isign>0)
     for (size_t m=0; m<2*n; m+=2)
       {
@@ -933,6 +931,7 @@ static void fftblue_fft(fftblue_plan plan, double c[], int isign)
       c[m]   = bk[m]  *akf[m] + bk[m+1]*akf[m+1];
       c[m+1] =-bk[m+1]*akf[m] + bk[m]  *akf[m+1];
       }
+  DEALLOC(akf);
   }
 
 static void cfftblue_backward(fftblue_plan plan, double c[])
