@@ -1,0 +1,464 @@
+#define PMC(a,b,c,d) { a.r=c.r+d.r; a.i=c.i+d.i; b.r=c.r-d.r; b.i=c.i-d.i; }
+#define ADDC(a,b,c) { a.r=b.r+c.r; a.i=b.i+c.i; }
+#define SCALEC(a,b) { a.r*=b; a.i*=b; }
+#define CONJFLIPC(a) { double tmp_=a.r; a.r=-a.i; a.i=tmp_; }
+#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
+#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
+#define WA(x,i) wa[(i)+(x)*ido]
+
+#ifdef BACKWARD
+#define PSIGN +
+#define PMSIGNC(a,b,c,d) { a.r=c.r+d.r; a.i=c.i+d.i; b.r=c.r-d.r; b.i=c.i-d.i; }
+/* a = b*c */
+#define MULPMSIGNC(a,b,c) { a.r=b.r*c.r-b.i*c.i; a.i=b.r*c.i+b.i*c.r; }
+/* a *= b */
+#define MULPMSIGNCEQ(a,b) { double xtmp=a.r; a.r=b.r*a.r-b.i*a.i; a.i=b.r*a.i+b.i*xtmp; }
+#else
+#define PSIGN -
+#define PMSIGNC(a,b,c,d) { a.r=c.r-d.r; a.i=c.i-d.i; b.r=c.r+d.r; b.i=c.i+d.i; }
+/* a = conj(b)*c */
+#define MULPMSIGNC(a,b,c) { a.r=b.r*c.r+b.i*c.i; a.i=b.r*c.i-b.i*c.r; }
+/* a *= conj(b) */
+#define MULPMSIGNCEQ(a,b) { double xtmp=a.r; a.r=b.r*a.r+b.i*a.i; a.i=b.r*a.i-b.i*xtmp; }
+#endif
+
+NOINLINE static void X(2) (size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa)
+  {
+  const size_t cdim=2;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
+      for (size_t i=1; i<ido; ++i)
+        {
+        cmplx t;
+        PMC (CH(i,k,0),t,CC(i,0,k),CC(i,1,k))
+        MULPMSIGNC (CH(i,k,1),WA(0,i),t)
+        }
+      }
+  }
+
+#define PREP3(idx) \
+        cmplx t0 = CC(idx,0,k), t1, t2; \
+        PMC (t1,t2,CC(idx,1,k),CC(idx,2,k)) \
+        CH(idx,k,0).r=t0.r+t1.r; \
+        CH(idx,k,0).i=t0.i+t1.i;
+#define PARTSTEP3a(u1,u2,twr,twi) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t0.r+twr*t1.r; \
+        ca.i=t0.i+twr*t1.i; \
+        cb.i=twi*t2.r; \
+        cb.r=-(twi*t2.i); \
+        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) \
+        }
+#define PARTSTEP3(u1,u2,twr,twi) \
+        { \
+        cmplx ca,cb,da,db; \
+        ca.r=t0.r+twr*t1.r; \
+        ca.i=t0.i+twr*t1.i; \
+        cb.i=twi*t2.r; \
+        cb.r=-(twi*t2.i); \
+        PMC(da,db,ca,cb) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void X(3)(size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa)
+  {
+  const size_t cdim=3;
+  static const double tw1r=-0.5, tw1i= PSIGN 0.86602540378443864676;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP3(0)
+      PARTSTEP3a(1,2,tw1r,tw1i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP3(0)
+      PARTSTEP3a(1,2,tw1r,tw1i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP3(i)
+        PARTSTEP3(1,2,tw1r,tw1i)
+        }
+      }
+  }
+
+NOINLINE static void X(4)(size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa)
+  {
+  const size_t cdim=4;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      cmplx t1, t2, t3, t4;
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
+      CONJFLIPC(t4)
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
+      PMSIGNC (CH(0,k,1),CH(0,k,3),t1,t4)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      cmplx t1, t2, t3, t4;
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
+      CONJFLIPC(t4)
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
+      PMSIGNC (CH(0,k,1),CH(0,k,3),t1,t4)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        cmplx c2, c3, c4, t1, t2, t3, t4;
+        cmplx cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
+        PMC(t2,t1,cc0,cc2)
+        PMC(t3,t4,cc1,cc3)
+        CONJFLIPC(t4)
+        cmplx ch0, ch1, ch2, ch3, wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
+        PMC(ch0,c3,t2,t3)
+        PMSIGNC (c2,c4,t1,t4)
+        MULPMSIGNC (ch1,wa0,c2)
+        MULPMSIGNC (ch2,wa1,c3)
+        MULPMSIGNC (ch3,wa2,c4)
+        CH(i,k,0)=ch0;
+        CH(i,k,1)=ch1;
+        CH(i,k,2)=ch2;
+        CH(i,k,3)=ch3;
+        }
+      }
+  }
+
+#define PREP5(idx) \
+        cmplx t0 = CC(idx,0,k), t1, t2, t3, t4; \
+        PMC (t1,t4,CC(idx,1,k),CC(idx,4,k)) \
+        PMC (t2,t3,CC(idx,2,k),CC(idx,3,k)) \
+        CH(idx,k,0).r=t0.r+t1.r+t2.r; \
+        CH(idx,k,0).i=t0.i+t1.i+t2.i;
+
+#define PARTSTEP5a(u1,u2,twar,twbr,twai,twbi) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t0.r+twar*t1.r+twbr*t2.r; \
+        ca.i=t0.i+twar*t1.i+twbr*t2.i; \
+        cb.i=twai*t4.r twbi*t3.r; \
+        cb.r=-(twai*t4.i twbi*t3.i); \
+        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) \
+        }
+#define PARTSTEP5(u1,u2,twar,twbr,twai,twbi) \
+        { \
+        cmplx ca,cb,da,db; \
+        ca.r=t0.r+twar*t1.r+twbr*t2.r; \
+        ca.i=t0.i+twar*t1.i+twbr*t2.i; \
+        cb.i=twai*t4.r twbi*t3.r; \
+        cb.r=-(twai*t4.i twbi*t3.i); \
+        PMC(da,db,ca,cb) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void X(5)(size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa)
+  {
+  const size_t cdim=5;
+  const double tw1r= 0.3090169943749474241,
+               tw1i= PSIGN 0.95105651629515357212,
+               tw2r= -0.8090169943749474241,
+               tw2i= PSIGN 0.58778525229247312917;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP5(0)
+      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP5(0)
+      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP5(i)
+        PARTSTEP5(1,4,tw1r,tw2r,+tw1i,+tw2i)
+        PARTSTEP5(2,3,tw2r,tw1r,+tw2i,-tw1i)
+        }
+      }
+  }
+
+#define PREP7(idx) \
+        cmplx t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7; \
+        PMC (t2,t7,CC(idx,1,k),CC(idx,6,k)) \
+        PMC (t3,t6,CC(idx,2,k),CC(idx,5,k)) \
+        PMC (t4,t5,CC(idx,3,k),CC(idx,4,k)) \
+        CH(idx,k,0).r=t1.r+t2.r+t3.r+t4.r; \
+        CH(idx,k,0).i=t1.i+t2.i+t3.i+t4.i;
+
+#define PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,out1,out2) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t1.r+x1*t2.r+x2*t3.r+x3*t4.r; \
+        ca.i=t1.i+x1*t2.i+x2*t3.i+x3*t4.i; \
+        cb.i=y1*t7.r y2*t6.r y3*t5.r; \
+        cb.r=-(y1*t7.i y2*t6.i y3*t5.i); \
+        PMC(out1,out2,ca,cb) \
+        }
+#define PARTSTEP7a(u1,u2,x1,x2,x3,y1,y2,y3) \
+        PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,CH(0,k,u1),CH(0,k,u2))
+#define PARTSTEP7(u1,u2,x1,x2,x3,y1,y2,y3) \
+        { \
+        cmplx da,db; \
+        PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,da,db) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void X(7)(size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa)
+  {
+  const size_t cdim=7;
+  const double tw1r= 0.623489801858733558,
+               tw1i= PSIGN 0.781831482468029787,
+               tw2r= -0.222520933956314336,
+               tw2i= PSIGN 0.974927912181823623,
+               tw3r= -0.900968867902419081,
+               tw3i= PSIGN 0.433883739117558215;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP7(0)
+      PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+      PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+      PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP7(0)
+      PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+      PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+      PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP7(i)
+        PARTSTEP7(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+        PARTSTEP7(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+        PARTSTEP7(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+        }
+      }
+  }
+
+#define PREP11(idx) \
+        cmplx t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7, t8, t9, t10, t11; \
+        PMC (t2,t11,CC(idx,1,k),CC(idx,10,k)) \
+        PMC (t3,t10,CC(idx,2,k),CC(idx, 9,k)) \
+        PMC (t4,t9 ,CC(idx,3,k),CC(idx, 8,k)) \
+        PMC (t5,t8 ,CC(idx,4,k),CC(idx, 7,k)) \
+        PMC (t6,t7 ,CC(idx,5,k),CC(idx, 6,k)) \
+        CH(idx,k,0).r=t1.r+t2.r+t3.r+t4.r+t5.r+t6.r; \
+        CH(idx,k,0).i=t1.i+t2.i+t3.i+t4.i+t5.i+t6.i;
+
+#define PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,out1,out2) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t1.r+x1*t2.r+x2*t3.r+x3*t4.r+x4*t5.r+x5*t6.r; \
+        ca.i=t1.i+x1*t2.i+x2*t3.i+x3*t4.i+x4*t5.i+x5*t6.i; \
+        cb.i=y1*t11.r y2*t10.r y3*t9.r y4*t8.r y5*t7.r; \
+        cb.r=-(y1*t11.i y2*t10.i y3*t9.i y4*t8.i y5*t7.i ); \
+        PMC(out1,out2,ca,cb) \
+        }
+#define PARTSTEP11a(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5) \
+        PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,CH(0,k,u1),CH(0,k,u2))
+#define PARTSTEP11(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5) \
+        { \
+        cmplx da,db; \
+        PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,da,db) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void X(11)(size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa)
+  {
+  const size_t cdim=11;
+  const double tw1r =        0.841253532831181181,
+               tw1i = PSIGN  0.540640817455597563,
+               tw2r =        0.415415013001886466,
+               tw2i = PSIGN  0.909631995354518353,
+               tw3r =       -0.142314838273285074,
+               tw3i = PSIGN  0.989821441880932742,
+               tw4r =       -0.654860733945284997,
+               tw4i = PSIGN  0.755749574354258342,
+               tw5r =       -0.959492973614497359,
+               tw5i = PSIGN  0.281732556841429804;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP11(0)
+      PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+      PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+      PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+      PARTSTEP11a(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+      PARTSTEP11a(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP11(0)
+      PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+      PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+      PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+      PARTSTEP11a(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+      PARTSTEP11a(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP11(i)
+        PARTSTEP11(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+        PARTSTEP11(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+        PARTSTEP11(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+        PARTSTEP11(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+        PARTSTEP11(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+        }
+      }
+  }
+
+NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
+  const cmplx * restrict cc, cmplx * restrict ch, const cmplx * restrict wa)
+  {
+  const size_t cdim=ip;
+  size_t ipph = (ip+1)/2;
+
+  cmplx * restrict ccl=RALLOC(cmplx,2*ip);
+  cmplx * restrict wal=ccl+ip;
+  wal[0]=(cmplx){1.,0.};
+  for (size_t i=1; i<ip; ++i)
+    wal[i]=(cmplx){wa[ido*(i-1)].r,PSIGN wa[ido*(i-1)].i};
+
+  for (size_t k=0; k<l1; ++k)
+    {
+    {
+    cmplx s=CC(0,0,k);
+    ccl[0] = CC(0,0,k);
+    for(size_t j=1,jc=ip-1; j<ipph; ++j,--jc)
+      {
+      PMC (ccl[j],ccl[jc],CC(0,j,k),CC(0,jc,k))
+      ADDC (s,s,ccl[j])
+      }
+    CH(0,k,0) = s;
+    for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
+      {
+      cmplx abr=ccl[0], abi={0.,0.};
+      size_t iang=0;
+      for (size_t l=1,lc=ip-1; l<ipph; ++l,--lc)
+        {
+        iang+=j;
+        if (iang>=ip) iang-=ip;
+        abr.r += ccl[l ].r*wal[iang].r; // complex mult
+        abr.i += ccl[l ].i*wal[iang].r;
+        abi.r += ccl[lc].r*wal[iang].i;
+        abi.i += ccl[lc].i*wal[iang].i;
+        }
+      CONJFLIPC(abi)
+      PMC(CH(0,k,j),CH(0,k,jc),abr,abi)
+      }
+    }
+    for (size_t i=1; i<ido; ++i)
+      {
+      cmplx s=CC(i,0,k);
+      ccl[0] = CC(i,0,k);
+      for(size_t j=1,jc=ip-1; j<ipph; ++j,--jc)
+        {
+        PMC (ccl[j],ccl[jc],CC(i,j,k),CC(i,jc,k))
+        ADDC (s,s,ccl[j])
+        }
+      CH(i,k,0) = s;
+      for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
+        {
+        cmplx abr=ccl[0], abi={0.,0.};
+        size_t iang=0;
+        for (size_t l=1,lc=ip-1; l<ipph; ++l,--lc)
+          {
+          iang+=j;
+          if (iang>=ip) iang-=ip;
+          abr.r += ccl[l ].r*wal[iang].r; // complex mult
+          abr.i += ccl[l ].i*wal[iang].r;
+          abi.r += ccl[lc].r*wal[iang].i;
+          abi.i += ccl[lc].i*wal[iang].i;
+          }
+        CONJFLIPC(abi)
+        cmplx x1,x2;
+        PMC(x1,x2,abr,abi)
+        size_t idij=(j-1)*ido+1+i-1;
+        MULPMSIGNC (CH(i,k,j),wa[idij],x1)
+        idij=(ip-j-1)*ido+1+i-1;
+        MULPMSIGNC (CH(i,k,jc),wa[idij],x2)
+        }
+      }
+    }
+
+  DEALLOC(ccl);
+  }
+
+static void X(_all)(cfftp_plan plan, cmplx c[])
+  {
+  if (plan->length==1) return;
+  size_t len=plan->length;
+  size_t l1=1, nf=plan->nfct;
+  cmplx *ch=plan->wrk;
+  cmplx *p1=c, *p2=ch;
+
+  for(size_t k1=0; k1<nf; k1++)
+    {
+    size_t ip=plan->fct[k1].fct;
+    size_t l2=ip*l1;
+    size_t ido = len/l2;
+    if     (ip==4)  X( 4)(ido, l1, p1, p2, plan->fct[k1].tw);
+    else if(ip==2)  X( 2)(ido, l1, p1, p2, plan->fct[k1].tw);
+    else if(ip==3)  X( 3)(ido, l1, p1, p2, plan->fct[k1].tw);
+    else if(ip==5)  X( 5)(ido, l1, p1, p2, plan->fct[k1].tw);
+    else if(ip==7)  X( 7)(ido, l1, p1, p2, plan->fct[k1].tw);
+    else if(ip==11) X(11)(ido, l1, p1, p2, plan->fct[k1].tw);
+    else            X( g)(ido, ip, l1, p1, p2, plan->fct[k1].tw);
+    SWAP(p1,p2,cmplx *);
+    l1=l2;
+    }
+  if (p1!=c)
+    memcpy (c,p1,len*sizeof(cmplx));
+  }
+
+#undef PSIGN
+#undef PMSIGNC
+#undef MULPMSIGNC
+#undef MULPMSIGNCEQ
+
+#undef WA
+#undef CC
+#undef CH
+#undef CONJFLIPC
+#undef SCALEC
+#undef ADDC
+#undef PMC
