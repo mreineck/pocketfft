@@ -1,3 +1,15 @@
+/*
+ * This file is part of pocketfft.
+ * Licensed under a 3-clause BSD style license - see LICENSE.md
+ */
+
+/*
+ *  Main implementation file.
+ *
+ *  Copyright (C) 2004-2018 Max-Planck-Society
+ *  \author Martin Reinecke
+ */
+
 #include <math.h>
 #include <string.h>
 #include "pocketfft.h"

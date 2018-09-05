@@ -1,3 +1,8 @@
+/*
+ * This file is part of pocketfft.
+ * Licensed under a 3-clause BSD style license - see LICENSE.md
+ */
+
 /*! \file c_utils.h
  *  Convenience functions
  *
@@ -6,8 +11,8 @@
  *  \note This file should only be included from .c files, NOT from .h files.
  */
 
-#ifndef PLANCK_C_UTILS_H
-#define PLANCK_C_UTILS_H
+#ifndef POCKETFFT_C_UTILS_H
+#define POCKETFFT_C_UTILS_H
 
 #include <math.h>
 #include <stdlib.h>

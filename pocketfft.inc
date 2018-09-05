@@ -1,3 +1,15 @@
+/*
+ * This file is part of pocketfft.
+ * Licensed under a 3-clause BSD style license - see LICENSE.md
+ */
+
+/*
+ *  Auxiliary implementation file, included from pocketfft.c
+ *
+ *  Copyright (C) 2004-2018 Max-Planck-Society
+ *  \author Martin Reinecke
+ */
+
 #define PMC(a,b,c,d) { a.r=c.r+d.r; a.i=c.i+d.i; b.r=c.r-d.r; b.i=c.i-d.i; }
 #define ADDC(a,b,c) { a.r=b.r+c.r; a.i=b.i+c.i; }
 #define SCALEC(a,b) { a.r*=b; a.i*=b; }

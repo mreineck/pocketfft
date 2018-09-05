@@ -1,3 +1,8 @@
+/*
+ * This file is part of pocketfft.
+ * Licensed under a 3-clause BSD style license - see LICENSE.md
+ */
+
 /*! \file trig_utils.c
  *
  *  Copyright (C) 2016-2018 Max-Planck-Society

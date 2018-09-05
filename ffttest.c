@@ -1,5 +1,10 @@
 /*
- *  Test codes for libfftpack.
+ * This file is part of pocketfft.
+ * Licensed under a 3-clause BSD style license - see LICENSE.md
+ */
+
+/*
+ *  Test codes for pocketfft.
  *
  *  Copyright (C) 2004-2018 Max-Planck-Society
  *  \author Martin Reinecke

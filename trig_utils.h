@@ -1,11 +1,16 @@
+/*
+ * This file is part of pocketfft.
+ * Licensed under a 3-clause BSD style license - see LICENSE.md
+ */
+
 /*! \file trig_utils.h
  *
  *  Copyright (C) 2016-2018 Max-Planck-Society
  *  \author Martin Reinecke
  */
 
-#ifndef PLANCK_TRIGHELPER_H
-#define PLANCK_TRIGHELPER_H
+#ifndef POCKETFFT_TRIG_UTILS_H
+#define POCKETFFT_TRIG_UTILS_H
 
 #include <stdlib.h>
 
