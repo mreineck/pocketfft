@@ -12,5 +12,4 @@ advantages:
 License
 -------
 
-3-clause BSD (see LICENSE)
-
+3-clause BSD (see LICENSE.md)

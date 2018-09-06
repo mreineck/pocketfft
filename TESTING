@@ -1,0 +1,6 @@
+To run a quick test for all FFT sizes up to 8192, do
+
+gcc -std=c99 -O2 -W -Wall *.c -lm
+./a.out
+
+If there is no output, the tests have succeeded.
