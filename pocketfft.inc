@@ -424,9 +424,9 @@ NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
         CONJFLIPC(abi)
         cmplx x1,x2;
         PMC(x1,x2,abr,abi)
-        size_t idij=(j-1)*ido+1+i-1;
+        size_t idij=(j-1)*ido+i;
         MULPMSIGNC (CH(i,k,j),wa[idij],x1)
-        idij=(ip-j-1)*ido+1+i-1;
+        idij=(ip-j-1)*ido+i;
         MULPMSIGNC (CH(i,k,jc),wa[idij],x2)
         }
       }
