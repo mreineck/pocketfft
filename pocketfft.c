@@ -840,13 +840,13 @@ static fftblue_plan make_fftblue_plan (size_t length)
   {
   fftblue_plan plan = RALLOC(fftblue_plan_i,1);
   plan->n = length;
-  plan->n2=good_size(plan->n*2-1);
+  plan->n2 = good_size(plan->n*2-1);
   plan->mem = RALLOC(double, 2*plan->n+2*plan->n2);
   plan->bk  = plan->mem;
   plan->bkf = plan->bk+2*plan->n;
 
 /* initialize b_k */
-  double *tmp = RALLOC(double,IMAX(4*plan->n,2*plan->n2));
+  double *tmp = RALLOC(double,4*plan->n);
   sincos_2pibyn(2*plan->n,2*plan->n,&tmp[1],&tmp[0],2);
   plan->bk[0] = 1;
   plan->bk[1] = 0;
@@ -1033,20 +1033,6 @@ void cfft_forward(cfft_plan plan, double c[])
     cfftblue_forward(plan->blueplan,c);
   }
 
-void cfft_backward_noplan(double c[], size_t length)
-  {
-  cfft_plan plan = make_cfft_plan (length);
-  cfft_backward (plan, c);
-  destroy_cfft_plan (plan);
-  }
-
-void cfft_forward_noplan(double c[], size_t length)
-  {
-  cfft_plan plan = make_cfft_plan (length);
-  cfft_forward (plan, c);
-  destroy_cfft_plan (plan);
-  }
-
 typedef struct rfft_plan_i
   {
   rfftp_plan packplan;
@@ -1092,18 +1078,4 @@ void rfft_forward(rfft_plan plan, double c[])
     rfftp_forward(plan->packplan,c);
   else if (plan->blueplan)
     rfftblue_forward(plan->blueplan,c);
-  }
-
-void rfft_backward_noplan(double c[], size_t length)
-  {
-  rfft_plan plan = make_rfft_plan (length);
-  rfft_backward (plan, c);
-  destroy_rfft_plan (plan);
-  }
-
-void rfft_forward_noplan(double c[], size_t length)
-  {
-  rfft_plan plan = make_rfft_plan (length);
-  rfft_forward (plan, c);
-  destroy_rfft_plan (plan);
   }
