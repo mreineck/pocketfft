@@ -363,83 +363,127 @@ NOINLINE static void radf5(size_t ido, size_t l1, const double *cc, double *ch,
       }
   }
 
+#undef CC
+#undef CH
+#define C1(a,b,c) cc[(a)+ido*((b)+l1*(c))]
+#define C2(a,b) cc[(a)+idl1*(b)]
+#define CH2(a,b) ch[(a)+idl1*(b)]
+#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
+#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 NOINLINE static void radfg(size_t ido, size_t ip, size_t l1,
   double *cc, double *ch, const double *wa, const double *csarr)
   {
   const size_t cdim=ip;
-  size_t ipph=(ip+1)/ 2;
+  size_t ipph=(ip+1)/2;
+  size_t idl1 = ido*l1;
 
-  double *tarr=RALLOC(double,4*ipph);
-  double *tarr2=tarr+2*ipph;
-  for(size_t k=0; k<l1; k++)
+  if (ido>1)
     {
-    {
-    double v0=tarr[0]=CC(0,k,0);
-    for (size_t j=1; j<ipph; ++j)
+    for (size_t ik=0; ik<idl1; ++ik)                         // 101
+      CH2(ik,0) = C2(ik,0);
+
+    for (size_t j=1; j<ip; ++j)                              // 103
+      for (size_t k=0; k<l1; ++k)                            // 102
+        CH(0,k,j) = C1(0,k,j);
+
+    for (size_t j=1; j<ip; ++j)                              // 110
       {
-      double t10=CC(0,k,ip-j), t20=CC(0,k,j);
-      v0+=tarr[2*j]=t10+t20;
-      tarr[2*j+1]=t10-t20;
-      }
-    CH(0,0,k)=v0;
-    for(size_t l=1; l<ipph; l++)
-      {
-      size_t aidx=2*l;
-      double tx1=tarr[0]+csarr[aidx]*tarr[2];
-      double tx2=csarr[aidx+1]*tarr[3];
-      for(size_t j=2; j<ipph; j++)
+      int is=(j-1)*ido;
+      for (size_t k=0; k<l1; ++k)                            // 109
         {
-        aidx+=2*l;
-        if (aidx>=2*ip) aidx-=2*ip;
-        tx1+=csarr[aidx  ]*tarr[2*j];
-        tx2+=csarr[aidx+1]*tarr[2*j+1];
-        }
-      CH(ido-1,2*l-1,k) = tx1;
-      CH(0    ,2*l  ,k) = tx2;
-      }
-    }
-    for(size_t i=2; i<ido; i+=2)
-      {
-      double v0a=tarr[0]=CC(i-1,k,0);
-      double v0b=tarr2[0]=CC(i  ,k,0);
-      for (size_t j=1; j<ipph; ++j)
-        {
-        size_t idij=(j-1)*ido+1+i-2, idij2=(ip-j-1)*ido+1+i-2;
-        double t1=CC(i-1,k,j   ), t2=CC(i,k,j   );
-        double t3=CC(i-1,k,ip-j), t4=CC(i,k,ip-j);
-        double t5, t6, t7, t8;
-        MULPM(t5,t6,wa[idij -1],wa[idij ],t1,t2)
-        MULPM(t7,t8,wa[idij2-1],wa[idij2],t3,t4)
-        PM(t1,tarr2[2*j+1],t7,t5)
-        PM(t3,tarr[2*j+1],t6,t8)
-        v0a+=tarr[2*j]=t1;
-        v0b+=tarr2[2*j]=t3;
-        }
-      CH(i-1,0,k)=v0a;
-      CH(i,0,k)=v0b;
-      for(size_t l=1; l<ipph; l++)
-        {
-        size_t aidx=2*l;
-        double tx1=tarr[0]+csarr[aidx]*tarr[2];
-        double tx2=csarr[aidx+1]*tarr[3];
-        double tx3=tarr2[0]+csarr[aidx]*tarr2[2];
-        double tx4=csarr[aidx+1]*tarr2[3];
-        for(size_t j=2; j<ipph; j++)
+        size_t idij=is;
+        for (size_t i=1; i<=ido-2; i+=2)                      // 108
           {
-          aidx+=2*l;
-          if (aidx>=2*ip) aidx-=2*ip;
-          tx1+=csarr[aidx  ]*tarr[2*j];
-          tx2+=csarr[aidx+1]*tarr[2*j+1];
-          tx3+=csarr[aidx  ]*tarr2[2*j];
-          tx4+=csarr[aidx+1]*tarr2[2*j+1];
+          double t1=C1(i,k,j), t2=C1(i+1,k,j);
+          CH(i  ,k,j)=wa[idij]*t1 + wa[idij+1]*t2;
+          CH(i+1,k,j)=wa[idij]*t2 - wa[idij+1]*t1;
+          idij+=2;
           }
-        PM (CH(i-1,2*l,k),CH(ido-i-1,2*l-1,k),tx1,tx2)
-        PM (CH(i  ,2*l,k),CH(ido-i  ,2*l-1,k),tx4,tx3)
+        }
+      }
+    for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)              // 114
+      for (size_t k=0; k<l1; ++k)                            // 113
+        for (size_t i=1; i<=ido-2; i+=2)                      // 112
+          {
+          double t1=CH(i,k,j ), t2=CH(i+1,k,j ),
+                 t3=CH(i,k,jc), t4=CH(i+1,k,jc);
+          C1(i  ,k,j ) = t1+t3;
+          C1(i  ,k,jc) = t2-t4;
+          C1(i+1,k,j ) = t2+t4;
+          C1(i+1,k,jc) = t3-t1;
+          }
+    }
+  else
+    {
+    memcpy(ch,cc,ip*l1*ido*sizeof(double));
+    // loop should not be necessary
+    for (size_t ik=0; ik<idl1; ++ik)                           // 120
+      C2(ik,0) = CH2(ik,0);
+    }
+
+  for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)                // 123
+    for (size_t k=0; k<l1; ++k)                              // 122
+      {
+      double t1=CH(0,k,j), t2=CH(0,k,jc);
+      C1(0,k,j ) = t1+t2;
+      C1(0,k,jc) = t2-t1;
+      }
+
+  for (size_t l=1,lc=ip-1; l<ipph; ++l,--lc)                 // 127
+    {
+    for (size_t ik=0; ik<idl1; ++ik)                         // 124
+      {
+      CH2(ik,l ) = C2(ik,0)+csarr[2*l]*C2(ik,1);
+      CH2(ik,lc) = csarr[2*l+1]*C2(ik,ip-1);
+      }
+    size_t iang = l;
+    for (size_t j=2, jc=ip-2; j<ipph; ++j,--jc)              // 126
+      {
+      iang+=l; if (iang>=ip) iang-=ip;
+      double ar=csarr[2*iang], ai=csarr[2*iang+1];
+      for (size_t ik=0; ik<idl1; ++ik)                       // 125
+        {
+        CH2(ik,l ) += ar*C2(ik,j );
+        CH2(ik,lc) += ai*C2(ik,jc);
         }
       }
     }
-  DEALLOC(tarr);
+  for (size_t j=1; j<ipph; ++j)                              // 129
+    for (size_t ik=0; ik<idl1; ++ik)                         // 128
+      CH2(ik,0) += C2(ik,j);
+
+  for (size_t k=0; k<l1; ++k)                                // 131
+    for (size_t i=0; i<ido; ++i)                             // 130
+      CC(i,0,k) = CH(i,k,0);
+
+  for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)                // 137
+    {
+    size_t j2=2*j-1;
+    for (size_t k=0; k<l1; ++k)                              // 136
+      {
+      CC(ido-1,j2,k) = CH(0,k,j);
+      CC(0,j2+1,k) = CH(0,k,jc);
+      }
+    }
+
+  if (ido==1) return;
+
+  for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)                // 140
+    {
+    size_t j2=2*j-1;
+    for(size_t k=0; k<l1; ++k)                               // 139
+      for(size_t i=1, ic=ido-i-2; i<=ido-2; i+=2, ic-=2)      // 138
+        {
+        CC(i   ,j2+1,k) = CH(i  ,k,j )+CH(i  ,k,jc);
+        CC(ic  ,j2  ,k) = CH(i  ,k,j )-CH(i  ,k,jc);
+        CC(i+1 ,j2+1,k) = CH(i+1,k,j )+CH(i+1,k,jc);
+        CC(ic+1,j2  ,k) = CH(i+1,k,jc)-CH(i+1,k,j );
+        }
+    }
   }
+#undef C1
+#undef C2
+#undef CH2
 
 #undef CH
 #undef CC
@@ -712,7 +756,7 @@ static void rfftp_forward(rfftp_plan plan, double c[])
     else if(ip==5)
       radf5(ido, l1, p1, p2, plan->fct[k].tw);
     else
-      radfg(ido, ip, l1, p1, p2, plan->fct[k].tw, plan->fct[k].tws);
+      {radfg(ido, ip, l1, p1, p2, plan->fct[k].tw, plan->fct[k].tws);SWAP (p1,p2,double *);}
     SWAP (p1,p2,double *);
     }
   if (p1!=c)

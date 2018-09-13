@@ -113,7 +113,7 @@ int main(void)
   double *dummy = RALLOC(double,100000);
   DEALLOC(dummy);
   //gettime(256, 10000);
-  //test_real();
-  test_complex();
+  test_real();
+  //test_complex();
   return 0;
   }
