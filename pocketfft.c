@@ -516,8 +516,8 @@ NOINLINE static void radb2(size_t ido, size_t l1, const double * restrict cc,
       }
   }
 
-NOINLINE static void radb3(size_t ido, size_t l1, const double *cc, double *ch,
-  const double *wa)
+NOINLINE static void radb3(size_t ido, size_t l1, const double * restrict cc,
+  double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=3;
   double taur=-0.5, taui=0.86602540378443864676;
