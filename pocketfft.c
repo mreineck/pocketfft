@@ -315,8 +315,8 @@ NOINLINE static void radf4(size_t ido, size_t l1, const double * restrict cc,
       }
   }
 
-NOINLINE static void radf5(size_t ido, size_t l1, const double *cc, double *ch,
-  const double *wa)
+NOINLINE static void radf5(size_t ido, size_t l1, const double * restrict cc,
+  double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=5;
   double tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
@@ -371,7 +371,8 @@ NOINLINE static void radf5(size_t ido, size_t l1, const double *cc, double *ch,
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 NOINLINE static void radfg(size_t ido, size_t ip, size_t l1,
-  double *cc, double *ch, const double *wa, const double *csarr)
+  double * restrict cc, double * restrict ch, const double * restrict wa,
+  const double * restrict csarr)
   {
   const size_t cdim=ip;
   size_t ipph=(ip+1)/2;
@@ -490,8 +491,8 @@ NOINLINE static void radfg(size_t ido, size_t ip, size_t l1,
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 
-NOINLINE static void radb2(size_t ido, size_t l1, const double *cc, double *ch,
-  const double *wa)
+NOINLINE static void radb2(size_t ido, size_t l1, const double * restrict cc,
+  double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=2;
 
@@ -550,8 +551,8 @@ NOINLINE static void radb3(size_t ido, size_t l1, const double *cc, double *ch,
       }
   }
 
-NOINLINE static void radb4(size_t ido, size_t l1, const double *cc, double *ch,
-  const double *wa)
+NOINLINE static void radb4(size_t ido, size_t l1, const double * restrict cc,
+  double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=4;
   static const double sqrt2=1.41421356237309504880;
@@ -596,8 +597,8 @@ NOINLINE static void radb4(size_t ido, size_t l1, const double *cc, double *ch,
       }
   }
 
-NOINLINE static void radb5(size_t ido, size_t l1, const double *cc, double *ch,
-  const double *wa)
+NOINLINE static void radb5(size_t ido, size_t l1, const double * restrict cc,
+  double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=5;
   double tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
@@ -649,7 +650,8 @@ NOINLINE static void radb5(size_t ido, size_t l1, const double *cc, double *ch,
   }
 
 NOINLINE static void radbg(size_t ido, size_t ip, size_t l1,
-  double *cc, double *ch, const double *wa, const double *csarr)
+  double * restrict cc, double * restrict ch, const double * restrict wa,
+  const double * restrict csarr)
   {
   const size_t cdim=ip;
   size_t ipph=(ip+1)/ 2;
