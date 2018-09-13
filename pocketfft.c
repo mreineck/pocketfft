@@ -97,6 +97,19 @@ static void cfftp_factorize (cfftp_plan plan)
   {
   size_t length=plan->length;
   size_t nfct=0;
+#if 1
+  size_t tlen=length;
+  while ((tlen%4)==0)
+    tlen>>=2;
+  if (tlen%2==0)
+    { length>>=1; plan->fct[nfct++].fct=2; }
+  while ((length%3)==0)
+    { length/=3; plan->fct[nfct++].fct=3; }
+  while ((length%4)==0)
+    { length>>=2; plan->fct[nfct++].fct=4; }
+  size_t maxl=(size_t)(sqrt((double)length))+1;
+  for (size_t divisor=5; (length>1)&&(divisor<maxl); divisor+=2)
+#else
   while ((length%4)==0)
     { plan->fct[nfct++].fct=4; length>>=2; }
   if ((length%2)==0)
@@ -108,6 +121,7 @@ static void cfftp_factorize (cfftp_plan plan)
     }
   size_t maxl=(size_t)(sqrt((double)length))+1;
   for (size_t divisor=3; (length>1)&&(divisor<maxl); divisor+=2)
+#endif
     if ((length%divisor)==0)
       {
       while ((length%divisor)==0)

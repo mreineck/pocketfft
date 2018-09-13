@@ -75,24 +75,45 @@ static void test_complex(void)
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,2*length*sizeof(double));
-#ifdef TEST_SIMPLE_INTERFACE
-    cfft_forward_noplan(data, length);
-    cfft_backward_noplan(data, length);
-#else
     cfft_plan plan = make_cfft_plan (length);
     cfft_forward(plan, data);
     cfft_backward(plan, data);
     destroy_cfft_plan (plan);
-#endif
     normalize (data, 2*length, length);
     double err = errcalc (data, odata, 2*length);
     if (err>epsilon) printf("problem at complex length %i: %e\n",length,err);
     }
   }
 
+#include <omp.h>
+static void gettime(size_t length, size_t ntry)
+  {
+  double *data=RALLOC(double,2*length), *odata=RALLOC(double,2*length);
+  fill_random (odata, 2*length);
+  cfft_plan plan = make_cfft_plan (length);
+
+  double t0 = omp_get_wtime();
+  for (size_t i=0; i<ntry; ++i)
+    {
+    memcpy(data,odata,2*length*sizeof(double));
+    cfft_forward(plan, data);
+    }
+  double t1 = omp_get_wtime();
+  for (size_t i=0; i<ntry; ++i)
+    {
+    memcpy(data,odata,2*length*sizeof(double));
+    cfft_backward(plan, data);
+    }
+  double t2 = omp_get_wtime();
+  printf("%e %e\n", (t1-t0)/ntry, (t2-t1)/ntry);
+  }
+
 int main(void)
   {
-  test_real();
+  double *dummy = RALLOC(double,100000);
+  DEALLOC(dummy);
+  //gettime(256, 10000);
+  //test_real();
   test_complex();
   return 0;
   }

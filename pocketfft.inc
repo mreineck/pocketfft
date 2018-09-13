@@ -358,81 +358,82 @@ NOINLINE static void X(11)(size_t ido, size_t l1, const cmplx * restrict cc,
       }
   }
 
+#define MULADD(a,b,c) {a.r+=b.r*c.r-b.i*c.i; a.i+=b.r*c.i+b.i*c.r;}
+#define MULADDC(a,b,c) {a.r+=b.r*c.r+b.i*c.i; a.i+=-b.r*c.i+b.i*c.r;}
+#define APMC(a,b,c,d) { a.r+=c.r+d.r; a.i+=c.i+d.i; b.r+=c.r-d.r; b.i+=c.i-d.i; }
+
 NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
   const cmplx * restrict cc, cmplx * restrict ch, const cmplx * restrict wa)
   {
   const size_t cdim=ip;
   size_t ipph = (ip+1)/2;
+  size_t idl1 = ido*l1;
 
-  cmplx * restrict ccl=RALLOC(cmplx,2*ip);
-  cmplx * restrict wal=ccl+ip;
+  cmplx * restrict wal=RALLOC(cmplx,ip);
   wal[0]=(cmplx){1.,0.};
   for (size_t i=1; i<ip; ++i)
     wal[i]=(cmplx){wa[ido*(i-1)].r,PSIGN wa[ido*(i-1)].i};
-
+  cmplx * restrict cx=RALLOC(cmplx,ip*l1*ido);
+#define CX(a,b,c) cx[(a)+ido*((b)+l1*(c))]
+#define CX2(a,b) cx[(a)+idl1*(b)]
+#define CH2(a,b) ch[(a)+idl1*(b)]
   for (size_t k=0; k<l1; ++k)
-    {
-    {
-    cmplx s=CC(0,0,k);
-    ccl[0] = CC(0,0,k);
-    for(size_t j=1,jc=ip-1; j<ipph; ++j,--jc)
-      {
-      PMC (ccl[j],ccl[jc],CC(0,j,k),CC(0,jc,k))
-      ADDC (s,s,ccl[j])
-      }
-    CH(0,k,0) = s;
-    for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
-      {
-      cmplx abr=ccl[0], abi={0.,0.};
-      size_t iang=0;
-      for (size_t l=1,lc=ip-1; l<ipph; ++l,--lc)
+    for (size_t i=0; i<ido; ++i)
+      CH(i,k,0) = CX(i,k,0) = CC(i,0,k);
+  for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
+    for (size_t k=0; k<l1; ++k)
+      for (size_t i=0; i<ido; ++i)
         {
-        iang+=j;
-        if (iang>=ip) iang-=ip;
-        abr.r += ccl[l ].r*wal[iang].r; // complex mult
-        abr.i += ccl[l ].i*wal[iang].r;
-        abi.r += ccl[lc].r*wal[iang].i;
-        abi.i += ccl[lc].i*wal[iang].i;
+        PMC(CX(i,k,j),CX(i,k,jc),CC(i,j,k),CC(i,jc,k))
+        ADDC(CH(i,k,0),CH(i,k,0),CX(i,k,j))
         }
-      CONJFLIPC(abi)
-      PMC(CH(0,k,j),CH(0,k,jc),abr,abi)
+  for (size_t l=1, lc=ip-1; l<ipph; ++l, --lc)
+    {
+    // j=0
+    for (size_t ik=0; ik<idl1; ++ik)
+      {
+      CH2(ik,l).r = CX2(ik,0).r+wal[l].r*CX2(ik,1).r+wal[2*l].r*CX2(ik,2).r;
+      CH2(ik,l).i = CX2(ik,0).i+wal[l].r*CX2(ik,1).i+wal[2*l].r*CX2(ik,2).i;
+      CH2(ik,lc).r=-wal[l].i*CX2(ik,ip-1).i-wal[2*l].i*CX2(ik,ip-2).i;
+      CH2(ik,lc).i=wal[l].i*CX2(ik,ip-1).r+wal[2*l].i*CX2(ik,ip-2).r;
+      }
+
+    size_t iwal=2*l;
+    for (size_t j=3, jc=ip-3; j<ipph; ++j, --jc)
+      {
+      //cmplx xwal=wal[(l*j)%ip];
+      iwal+=l; if (iwal>ip) iwal-=ip;
+      cmplx xwal=wal[iwal];
+      for (size_t ik=0; ik<idl1; ++ik)
+        {
+        CH2(ik,l).r += CX2(ik,j).r*xwal.r;
+        CH2(ik,l).i += CX2(ik,j).i*xwal.r;
+        CH2(ik,lc).r -= CX2(ik,jc).i*xwal.i;
+        CH2(ik,lc).i += CX2(ik,jc).r*xwal.i;
+        }
       }
     }
-    for (size_t i=1; i<ido; ++i)
+  DEALLOC(cx);
+  DEALLOC(wal);
+  for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
+    for (size_t ik=0; ik<idl1; ++ik)
       {
-      cmplx s=CC(i,0,k);
-      ccl[0] = CC(i,0,k);
-      for(size_t j=1,jc=ip-1; j<ipph; ++j,--jc)
+      cmplx t1=CH2(ik,j), t2=CH2(ik,jc);
+      PMC(CH2(ik,j),CH2(ik,jc),t1,t2)
+      }
+
+  //twiddling
+  if (ido==1) return;
+  for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
+    for (size_t k=0; k<l1; ++k)
+      for (size_t i=1; i<ido; ++i)
         {
-        PMC (ccl[j],ccl[jc],CC(i,j,k),CC(i,jc,k))
-        ADDC (s,s,ccl[j])
-        }
-      CH(i,k,0) = s;
-      for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
-        {
-        cmplx abr=ccl[0], abi={0.,0.};
-        size_t iang=0;
-        for (size_t l=1,lc=ip-1; l<ipph; ++l,--lc)
-          {
-          iang+=j;
-          if (iang>=ip) iang-=ip;
-          abr.r += ccl[l ].r*wal[iang].r; // complex mult
-          abr.i += ccl[l ].i*wal[iang].r;
-          abi.r += ccl[lc].r*wal[iang].i;
-          abi.i += ccl[lc].i*wal[iang].i;
-          }
-        CONJFLIPC(abi)
-        cmplx x1,x2;
-        PMC(x1,x2,abr,abi)
+        cmplx x1=CH(i,k,j),x2=CH(i,k,jc);
         size_t idij=(j-1)*ido+i;
         MULPMSIGNC (CH(i,k,j),wa[idij],x1)
-        idij=(ip-j-1)*ido+i;
+        idij=(jc-1)*ido+i;
         MULPMSIGNC (CH(i,k,jc),wa[idij],x2)
         }
-      }
-    }
-
-  DEALLOC(ccl);
   }
 
 static void X(_all)(cfftp_plan plan, cmplx c[])
