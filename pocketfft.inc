@@ -358,12 +358,12 @@ NOINLINE static void X(11)(size_t ido, size_t l1, const cmplx * restrict cc,
       }
   }
 
-#define MULADD(a,b,c) {a.r+=b.r*c.r-b.i*c.i; a.i+=b.r*c.i+b.i*c.r;}
-#define MULADDC(a,b,c) {a.r+=b.r*c.r+b.i*c.i; a.i+=-b.r*c.i+b.i*c.r;}
-#define APMC(a,b,c,d) { a.r+=c.r+d.r; a.i+=c.i+d.i; b.r+=c.r-d.r; b.i+=c.i-d.i; }
+#define CX(a,b,c) cc[(a)+ido*((b)+l1*(c))]
+#define CX2(a,b) cc[(a)+idl1*(b)]
+#define CH2(a,b) ch[(a)+idl1*(b)]
 
 NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
-  const cmplx * restrict cc, cmplx * restrict ch, const cmplx * restrict wa)
+  cmplx * restrict cc, cmplx * restrict ch, const cmplx * restrict wa)
   {
   const size_t cdim=ip;
   size_t ipph = (ip+1)/2;
@@ -373,68 +373,80 @@ NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
   wal[0]=(cmplx){1.,0.};
   for (size_t i=1; i<ip; ++i)
     wal[i]=(cmplx){wa[ido*(i-1)].r,PSIGN wa[ido*(i-1)].i};
-  cmplx * restrict cx=RALLOC(cmplx,ip*l1*ido);
-#define CX(a,b,c) cx[(a)+ido*((b)+l1*(c))]
-#define CX2(a,b) cx[(a)+idl1*(b)]
-#define CH2(a,b) ch[(a)+idl1*(b)]
+
   for (size_t k=0; k<l1; ++k)
     for (size_t i=0; i<ido; ++i)
-      CH(i,k,0) = CX(i,k,0) = CC(i,0,k);
+      CH(i,k,0) = CC(i,0,k);
   for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
     for (size_t k=0; k<l1; ++k)
       for (size_t i=0; i<ido; ++i)
-        {
-        PMC(CX(i,k,j),CX(i,k,jc),CC(i,j,k),CC(i,jc,k))
-        ADDC(CH(i,k,0),CH(i,k,0),CX(i,k,j))
-        }
+        PMC(CH(i,k,j),CH(i,k,jc),CC(i,j,k),CC(i,jc,k))
+  for (size_t k=0; k<l1; ++k)
+    for (size_t i=0; i<ido; ++i)
+      {
+      cmplx tmp = CH(i,k,0);
+      for (size_t j=1; j<ipph; ++j)
+        ADDC(tmp,tmp,CH(i,k,j))
+      CX(i,k,0) = tmp;
+      }
   for (size_t l=1, lc=ip-1; l<ipph; ++l, --lc)
     {
     // j=0
     for (size_t ik=0; ik<idl1; ++ik)
       {
-      CH2(ik,l).r = CX2(ik,0).r+wal[l].r*CX2(ik,1).r+wal[2*l].r*CX2(ik,2).r;
-      CH2(ik,l).i = CX2(ik,0).i+wal[l].r*CX2(ik,1).i+wal[2*l].r*CX2(ik,2).i;
-      CH2(ik,lc).r=-wal[l].i*CX2(ik,ip-1).i-wal[2*l].i*CX2(ik,ip-2).i;
-      CH2(ik,lc).i=wal[l].i*CX2(ik,ip-1).r+wal[2*l].i*CX2(ik,ip-2).r;
+      CX2(ik,l).r = CH2(ik,0).r+wal[l].r*CH2(ik,1).r+wal[2*l].r*CH2(ik,2).r;
+      CX2(ik,l).i = CH2(ik,0).i+wal[l].r*CH2(ik,1).i+wal[2*l].r*CH2(ik,2).i;
+      CX2(ik,lc).r=-wal[l].i*CH2(ik,ip-1).i-wal[2*l].i*CH2(ik,ip-2).i;
+      CX2(ik,lc).i=wal[l].i*CH2(ik,ip-1).r+wal[2*l].i*CH2(ik,ip-2).r;
       }
 
     size_t iwal=2*l;
     for (size_t j=3, jc=ip-3; j<ipph; ++j, --jc)
       {
-      //cmplx xwal=wal[(l*j)%ip];
       iwal+=l; if (iwal>ip) iwal-=ip;
       cmplx xwal=wal[iwal];
       for (size_t ik=0; ik<idl1; ++ik)
         {
-        CH2(ik,l).r += CX2(ik,j).r*xwal.r;
-        CH2(ik,l).i += CX2(ik,j).i*xwal.r;
-        CH2(ik,lc).r -= CX2(ik,jc).i*xwal.i;
-        CH2(ik,lc).i += CX2(ik,jc).r*xwal.i;
+        CX2(ik,l).r += CH2(ik,j).r*xwal.r;
+        CX2(ik,l).i += CH2(ik,j).i*xwal.r;
+        CX2(ik,lc).r -= CH2(ik,jc).i*xwal.i;
+        CX2(ik,lc).i += CH2(ik,jc).r*xwal.i;
         }
       }
     }
-  DEALLOC(cx);
   DEALLOC(wal);
-  for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
-    for (size_t ik=0; ik<idl1; ++ik)
-      {
-      cmplx t1=CH2(ik,j), t2=CH2(ik,jc);
-      PMC(CH2(ik,j),CH2(ik,jc),t1,t2)
-      }
 
-  //twiddling
-  if (ido==1) return;
-  for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
-    for (size_t k=0; k<l1; ++k)
-      for (size_t i=1; i<ido; ++i)
+  // shuffling and twiddling
+  if (ido==1)
+    for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
+      for (size_t ik=0; ik<idl1; ++ik)
         {
-        cmplx x1=CH(i,k,j),x2=CH(i,k,jc);
-        size_t idij=(j-1)*ido+i;
-        MULPMSIGNC (CH(i,k,j),wa[idij],x1)
-        idij=(jc-1)*ido+i;
-        MULPMSIGNC (CH(i,k,jc),wa[idij],x2)
+        cmplx t1=CX2(ik,j), t2=CX2(ik,jc);
+        PMC(CX2(ik,j),CX2(ik,jc),t1,t2)
         }
+  else
+    {
+    for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
+      for (size_t k=0; k<l1; ++k)
+        {
+        cmplx t1=CX(0,k,j), t2=CX(0,k,jc);
+        PMC(CX(0,k,j),CX(0,k,jc),t1,t2)
+        for (size_t i=1; i<ido; ++i)
+          {
+          cmplx x1, x2;
+          PMC(x1,x2,CX(i,k,j),CX(i,k,jc))
+          size_t idij=(j-1)*ido+i;
+          MULPMSIGNC (CX(i,k,j),wa[idij],x1)
+          idij=(jc-1)*ido+i;
+          MULPMSIGNC (CX(i,k,jc),wa[idij],x2)
+          }
+        }
+    }
   }
+
+#undef CH2
+#undef CX2
+#undef CX
 
 static void X(_all)(cfftp_plan plan, cmplx c[])
   {
@@ -455,7 +467,7 @@ static void X(_all)(cfftp_plan plan, cmplx c[])
     else if(ip==5)  X( 5)(ido, l1, p1, p2, plan->fct[k1].tw);
     else if(ip==7)  X( 7)(ido, l1, p1, p2, plan->fct[k1].tw);
     else if(ip==11) X(11)(ido, l1, p1, p2, plan->fct[k1].tw);
-    else            X( g)(ido, ip, l1, p1, p2, plan->fct[k1].tw);
+    else {           X( g)(ido, ip, l1, p1, p2, plan->fct[k1].tw);SWAP(p1,p2,cmplx *);}
     SWAP(p1,p2,cmplx *);
     l1=l2;
     }
