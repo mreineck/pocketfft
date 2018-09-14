@@ -659,95 +659,11 @@ NOINLINE static void radb5(size_t ido, size_t l1, const double * restrict cc,
       }
   }
 
-#if 1
-NOINLINE static void radbg(size_t ido, size_t ip, size_t l1,
-  double * restrict cc, double * restrict ch, const double * restrict wa,
-  const double * restrict csarr)
-  {
-  const size_t cdim=ip;
-  size_t ipph=(ip+1)/ 2;
-
-  double *tarr=RALLOC(double,4*ipph);
-  double *tarr2=tarr+2*ipph;
-  for(size_t k=0; k<l1; k++)
-    {
-    {
-    double v0=tarr[0]=CC(0,0,k);
-    for (size_t j=1; j<ipph; ++j)
-      {
-      v0+=tarr[2*j]=2.*CC(ido-1,2*j-1,k);
-      tarr[2*j+1]=2.*CC(0,2*j,k);
-      }
-    CH(0,k,0)=v0;
-    for(size_t l=1; l<ipph; l++)
-      {
-      size_t aidx=2*l;
-      double tx1=tarr[0]+csarr[aidx]*tarr[2];
-      double tx2=csarr[aidx+1]*tarr[3];
-      for(size_t j=2; j<ipph; j++)
-        {
-        aidx+=2*l;
-        if (aidx>=2*ip) aidx-=2*ip;
-        tx1+=csarr[aidx  ]*tarr[2*j];
-        tx2+=csarr[aidx+1]*tarr[2*j+1];
-        }
-      PM (CH(0,k,ip-l),CH(0,k,l),tx1,tx2)
-      }
-    }
-
-    for(size_t i=2; i<ido; i+=2)
-      {
-      double v0a=tarr[0]=CC(i-1,0,k);
-      double v0b=tarr2[0]=CC(i,0,k);
-      for (size_t j=1; j<ipph; ++j)
-        {
-        double tx1,tx2,tx3,tx4;
-        PM (tx1,tx2,CC(i-1,2*j,k),CC(ido-i-1,2*j-1,k))
-        PM (tx4,tx3,CC(i  ,2*j,k),CC(ido-i  ,2*j-1,k))
-        v0a+=tarr[2*j]=tx1;
-        v0b+=tarr2[2*j]=tx3;
-        tarr[2*j+1]=tx2;
-        tarr2[2*j+1]=tx4;
-        }
-      CH(i-1,k,0)=v0a;
-      CH(i,k,0)=v0b;
-      for(size_t l=1; l<ipph; l++)
-        {
-        size_t aidx=2*l;
-        double txn1=tarr[0]+csarr[aidx]*tarr[2];
-        double txn2=csarr[aidx+1]*tarr[3];
-        double txn3=tarr2[0]+csarr[aidx]*tarr2[2];
-        double txn4=csarr[aidx+1]*tarr2[3];
-        for(size_t j=2; j<ipph; j++)
-          {
-          aidx+=2*l;
-          if (aidx>=2*ip) aidx-=2*ip;
-          txn1+=csarr[aidx  ]*tarr[2*j];
-          txn2+=csarr[aidx+1]*tarr[2*j+1];
-          txn3+=csarr[aidx  ]*tarr2[2*j];
-          txn4+=csarr[aidx+1]*tarr2[2*j+1];
-          }
-        double t5, t6, t7, t8;
-        PM (t5,t6,txn1,txn4)
-        PM (t7,t8,txn3,txn2)
-        size_t idij=(l-1)*ido+1+i-2;
-        size_t idij2=((ip-l)-1)*ido+1+i-2;
-        MULPM (CH(i,k,l),CH(i-1,k,l),wa[idij-1],wa[idij],t7,t6)
-        MULPM (CH(i,k,ip-l),CH(i-1,k,ip-l),wa[idij2-1],wa[idij2],t8,t5)
-        }
-      }
-    }
-  DEALLOC(tarr);
-  }
-#else
-//      DIMENSION       CH(IDO,L1,IP)          ,CC(IDO,IP,L1)          ,
-//     1                C1(IDO,L1,IP)          ,C2(IDL1,IP),
-//     2                CH2(IDL1,IP)           ,WA(1)
 #undef CC
 #undef CH
-#define CC(a,b,c) cc[(a)+ido*((b)+ip*(c))]
-#define CH(a,b,c) cc[(a)+ido*((b)+l1*(c))]
-#define C1(a,b,c) ch[(a)+ido*((b)+l1*(c))]
+#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
+#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
+#define C1(a,b,c) cc[(a)+ido*((b)+l1*(c))]
 #define C2(a,b) cc[(a)+idl1*(b)]
 #define CH2(a,b) ch[(a)+idl1*(b)]
 
@@ -774,7 +690,7 @@ NOINLINE static void radbg(size_t ido, size_t ip, size_t l1,
 
   if (ido!=1)
     {
-    for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)   // 111
+    for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)   // 111
       {
       size_t j2=2*j-1;
       for (size_t k=0; k<l1; ++k)
@@ -809,7 +725,7 @@ NOINLINE static void radbg(size_t ido, size_t ip, size_t l1,
   for (size_t j=1; j<ipph; ++j)
     for (size_t ik=0; ik<idl1; ++ik)
       CH2(ik,0) += CH2(ik,j);
-  for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)   // 124
+  for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)   // 124
     for (size_t k=0; k<l1; ++k)
       {
       CH(0,k,j ) = C1(0,k,j)-C1(0,k,jc);
@@ -851,8 +767,9 @@ NOINLINE static void radbg(size_t ido, size_t ip, size_t l1,
       }
     }
   }
-
-#endif
+#undef C1
+#undef C2
+#undef CH2
 
 #undef CC
 #undef CH
@@ -912,8 +829,7 @@ static void rfftp_backward(rfftp_plan plan, double c[])
     else if(ip==5)
       radb5(ido, l1, p1, p2, plan->fct[k].tw);
     else
-      radbg(ido, ip, l1, p1, p2, plan->fct[k].tw, plan->fct[k].tws);
-//      {radbg(ido, ip, l1, p1, p2, plan->fct[k].tw, plan->fct[k].tws);SWAP (p1,p2,double *);}
+      {radbg(ido, ip, l1, p1, p2, plan->fct[k].tw, plan->fct[k].tws);SWAP (p1,p2,double *);}
     SWAP (p1,p2,double *);
     l1*=ip;
     }
