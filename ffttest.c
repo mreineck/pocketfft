@@ -114,6 +114,6 @@ int main(void)
   DEALLOC(dummy);
   //gettime(256, 10000);
   test_real();
-  //test_complex();
+  test_complex();
   return 0;
   }
