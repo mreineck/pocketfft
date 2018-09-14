@@ -80,36 +80,23 @@ typedef struct cfftp_plan_i * cfftp_plan;
 
 #define X(arg) CONCAT(passb,arg)
 #define BACKWARD
-#include "pocketfft.inc"
+#include "pocketfft.inc.h"
 #undef BACKWARD
 #undef X
 #define X(arg) CONCAT(passf,arg)
-#include "pocketfft.inc"
+#include "pocketfft.inc.h"
 #undef X
 
-static void cfftp_forward(cfftp_plan plan, double c[])
-  { passf_all(plan,(cmplx *)c); }
+static void cfftp_forward(cfftp_plan plan, double c[], double fct)
+  { passf_all(plan,(cmplx *)c, fct); }
 
-static void cfftp_backward(cfftp_plan plan, double c[])
-  { passb_all(plan,(cmplx *)c); }
+static void cfftp_backward(cfftp_plan plan, double c[], double fct)
+  { passb_all(plan,(cmplx *)c, fct); }
 
 static void cfftp_factorize (cfftp_plan plan)
   {
   size_t length=plan->length;
   size_t nfct=0;
-#if 1
-  size_t tlen=length;
-  while ((tlen%4)==0)
-    tlen>>=2;
-  if (tlen%2==0)
-    { length>>=1; plan->fct[nfct++].fct=2; }
-  while ((length%3)==0)
-    { length/=3; plan->fct[nfct++].fct=3; }
-  while ((length%4)==0)
-    { length>>=2; plan->fct[nfct++].fct=4; }
-  size_t maxl=(size_t)(sqrt((double)length))+1;
-  for (size_t divisor=5; (length>1)&&(divisor<maxl); divisor+=2)
-#else
   while ((length%4)==0)
     { plan->fct[nfct++].fct=4; length>>=2; }
   if ((length%2)==0)
@@ -121,7 +108,6 @@ static void cfftp_factorize (cfftp_plan plan)
     }
   size_t maxl=(size_t)(sqrt((double)length))+1;
   for (size_t divisor=3; (length>1)&&(divisor<maxl); divisor+=2)
-#endif
     if ((length%divisor)==0)
       {
       while ((length%divisor)==0)
@@ -161,7 +147,7 @@ static void cfftp_comp_twiddle (cfftp_plan plan)
       for (size_t i=1; i<ido; ++i)
         triggen_get(&tg,j*l1*i,&(plan->fct[k].tw[(j-1)*ido+i].i),
                                &(plan->fct[k].tw[(j-1)*ido+i].r));
-      if (ip>6)
+      if (ip>12)
         triggen_get(&tg,j*l1*ido,&(plan->fct[k].tw[(j-1)*ido].i),
                                  &(plan->fct[k].tw[(j-1)*ido].r));
       }
@@ -817,7 +803,23 @@ NOINLINE static void radbg(size_t ido, size_t ip, size_t l1,
 #undef MULPM
 #undef WA
 
-static void rfftp_forward(rfftp_plan plan, double c[])
+static void copy_and_norm(double *c, double *p1, size_t n, double fct)
+  {
+  if (p1!=c)
+    {
+    if (fct!=1.)
+      for (size_t i=0; i<n; ++i)
+        c[i] = fct*p1[i];
+    else
+      memcpy (c,p1,n*sizeof(double));
+    }
+  else
+    if (fct!=1.)
+      for (size_t i=0; i<n; ++i)
+        c[i] *= fct;
+  }
+
+static void rfftp_forward(rfftp_plan plan, double c[], double fct)
   {
   if (plan->length==1) return;
   size_t n=plan->length;
@@ -840,15 +842,17 @@ static void rfftp_forward(rfftp_plan plan, double c[])
     else if(ip==5)
       radf5(ido, l1, p1, p2, plan->fct[k].tw);
     else
-      {radfg(ido, ip, l1, p1, p2, plan->fct[k].tw, plan->fct[k].tws);SWAP (p1,p2,double *);}
+      {
+      radfg(ido, ip, l1, p1, p2, plan->fct[k].tw, plan->fct[k].tws);
+      SWAP (p1,p2,double *);
+      }
     SWAP (p1,p2,double *);
     }
-  if (p1!=c)
-    memcpy (c,ch,n*sizeof(double));
+  copy_and_norm(c,p1,n,fct);
   DEALLOC(ch);
   }
 
-static void rfftp_backward(rfftp_plan plan, double c[])
+static void rfftp_backward(rfftp_plan plan, double c[], double fct)
   {
   if (plan->length==1) return;
   size_t n=plan->length;
@@ -873,8 +877,7 @@ static void rfftp_backward(rfftp_plan plan, double c[])
     SWAP (p1,p2,double *);
     l1*=ip;
     }
-  if (p1!=c)
-    memcpy (c,ch,n*sizeof(double));
+  copy_and_norm(c,p1,n,fct);
   DEALLOC(ch);
   }
 
@@ -1014,7 +1017,7 @@ static fftblue_plan make_fftblue_plan (size_t length)
   for (size_t m=2*plan->n;m<=(2*plan->n2-2*plan->n+1);++m)
     plan->bkf[m]=0.;
   plan->plan=make_cfftp_plan(plan->n2);
-  cfftp_forward(plan->plan,plan->bkf);
+  cfftp_forward(plan->plan,plan->bkf,1.);
   DEALLOC(tmp);
 
   return plan;
@@ -1027,7 +1030,7 @@ static void destroy_fftblue_plan (fftblue_plan plan)
   DEALLOC(plan);
   }
 
-static void fftblue_fft(fftblue_plan plan, double c[], int isign)
+static void fftblue_fft(fftblue_plan plan, double c[], int isign, double fct)
   {
   size_t n=plan->n;
   size_t n2=plan->n2;
@@ -1051,7 +1054,7 @@ static void fftblue_fft(fftblue_plan plan, double c[], int isign)
   for (size_t m=2*n; m<2*n2; ++m)
     akf[m]=0;
 
-  cfftp_forward (plan->plan,akf);
+  cfftp_forward (plan->plan,akf,fct);
 
 /* do the convolution */
   if (isign>0)
@@ -1070,7 +1073,7 @@ static void fftblue_fft(fftblue_plan plan, double c[], int isign)
       }
 
 /* inverse FFT */
-  cfftp_backward (plan->plan,akf);
+  cfftp_backward (plan->plan,akf,1.);
 
 /* multiply by b_k */
   if (isign>0)
@@ -1088,13 +1091,13 @@ static void fftblue_fft(fftblue_plan plan, double c[], int isign)
   DEALLOC(akf);
   }
 
-static void cfftblue_backward(fftblue_plan plan, double c[])
-  { fftblue_fft(plan,c,1); }
+static void cfftblue_backward(fftblue_plan plan, double c[], double fct)
+  { fftblue_fft(plan,c,1,fct); }
 
-static void cfftblue_forward(fftblue_plan plan, double c[])
-  { fftblue_fft(plan,c,-1); }
+static void cfftblue_forward(fftblue_plan plan, double c[], double fct)
+  { fftblue_fft(plan,c,-1,fct); }
 
-static void rfftblue_backward(fftblue_plan plan, double c[])
+static void rfftblue_backward(fftblue_plan plan, double c[], double fct)
   {
   size_t n=plan->n;
   double *tmp = RALLOC(double,2*n);
@@ -1107,13 +1110,13 @@ static void rfftblue_backward(fftblue_plan plan, double c[])
     tmp[2*n-m]=tmp[m];
     tmp[2*n-m+1]=-tmp[m+1];
     }
-  fftblue_fft(plan,tmp,1);
+  fftblue_fft(plan,tmp,1,fct);
   for (size_t m=0; m<n; ++m)
     c[m] = tmp[2*m];
   DEALLOC(tmp);
   }
 
-static void rfftblue_forward(fftblue_plan plan, double c[])
+static void rfftblue_forward(fftblue_plan plan, double c[], double fct)
   {
   size_t n=plan->n;
   double *tmp = RALLOC(double,2*n);
@@ -1122,7 +1125,7 @@ static void rfftblue_forward(fftblue_plan plan, double c[])
     tmp[2*m] = c[m];
     tmp[2*m+1] = 0.;
     }
-  fftblue_fft(plan,tmp,-1);
+  fftblue_fft(plan,tmp,-1,fct);
   c[0] = tmp[0];
   memcpy (c+1, tmp+2, (n-1)*sizeof(double));
   DEALLOC(tmp);
@@ -1159,20 +1162,20 @@ void destroy_cfft_plan (cfft_plan plan)
   DEALLOC(plan);
   }
 
-void cfft_backward(cfft_plan plan, double c[])
+void cfft_backward(cfft_plan plan, double c[], double fct)
   {
   if (plan->packplan)
-    cfftp_backward(plan->packplan,c);
+    cfftp_backward(plan->packplan,c,fct);
   else if (plan->blueplan)
-    cfftblue_backward(plan->blueplan,c);
+    cfftblue_backward(plan->blueplan,c,fct);
   }
 
-void cfft_forward(cfft_plan plan, double c[])
+void cfft_forward(cfft_plan plan, double c[], double fct)
   {
   if (plan->packplan)
-    cfftp_forward(plan->packplan,c);
+    cfftp_forward(plan->packplan,c,fct);
   else if (plan->blueplan)
-    cfftblue_forward(plan->blueplan,c);
+    cfftblue_forward(plan->blueplan,c,fct);
   }
 
 typedef struct rfft_plan_i
@@ -1206,18 +1209,18 @@ void destroy_rfft_plan (rfft_plan plan)
   DEALLOC(plan);
   }
 
-void rfft_backward(rfft_plan plan, double c[])
+void rfft_backward(rfft_plan plan, double c[], double fct)
   {
   if (plan->packplan)
-    rfftp_backward(plan->packplan,c);
+    rfftp_backward(plan->packplan,c,fct);
   else if (plan->blueplan)
-    rfftblue_backward(plan->blueplan,c);
+    rfftblue_backward(plan->blueplan,c,fct);
   }
 
-void rfft_forward(rfft_plan plan, double c[])
+void rfft_forward(rfft_plan plan, double c[], double fct)
   {
   if (plan->packplan)
-    rfftp_forward(plan->packplan,c);
+    rfftp_forward(plan->packplan,c,fct);
   else if (plan->blueplan)
-    rfftblue_forward(plan->blueplan,c);
+    rfftblue_forward(plan->blueplan,c,fct);
   }

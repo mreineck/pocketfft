@@ -141,16 +141,12 @@ NOINLINE static void X(4)(size_t ido, size_t l1, const cmplx * restrict cc,
         PMC(t2,t1,cc0,cc2)
         PMC(t3,t4,cc1,cc3)
         CONJFLIPC(t4)
-        cmplx ch0, ch1, ch2, ch3, wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
-        PMC(ch0,c3,t2,t3)
+        cmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
+        PMC(CH(i,k,0),c3,t2,t3)
         PMSIGNC (c2,c4,t1,t4)
-        MULPMSIGNC (ch1,wa0,c2)
-        MULPMSIGNC (ch2,wa1,c3)
-        MULPMSIGNC (ch3,wa2,c4)
-        CH(i,k,0)=ch0;
-        CH(i,k,1)=ch1;
-        CH(i,k,2)=ch2;
-        CH(i,k,3)=ch3;
+        MULPMSIGNC (CH(i,k,1),wa0,c2)
+        MULPMSIGNC (CH(i,k,2),wa1,c3)
+        MULPMSIGNC (CH(i,k,3),wa2,c4)
         }
       }
   }
@@ -463,7 +459,7 @@ NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
 #undef CX2
 #undef CX
 
-static void X(_all)(cfftp_plan plan, cmplx c[])
+static void X(_all)(cfftp_plan plan, cmplx c[], double fct)
   {
   if (plan->length==1) return;
   size_t len=plan->length;
@@ -482,12 +478,32 @@ static void X(_all)(cfftp_plan plan, cmplx c[])
     else if(ip==5)  X( 5)(ido, l1, p1, p2, plan->fct[k1].tw);
     else if(ip==7)  X( 7)(ido, l1, p1, p2, plan->fct[k1].tw);
     else if(ip==11) X(11)(ido, l1, p1, p2, plan->fct[k1].tw);
-    else {           X( g)(ido, ip, l1, p1, p2, plan->fct[k1].tw);SWAP(p1,p2,cmplx *);}
+    else
+      {
+      X( g)(ido, ip, l1, p1, p2, plan->fct[k1].tw);
+      SWAP(p1,p2,cmplx *);
+      }
     SWAP(p1,p2,cmplx *);
     l1=l2;
     }
   if (p1!=c)
-    memcpy (c,p1,len*sizeof(cmplx));
+    {
+    if (fct!=1.)
+      for (size_t i=0; i<len; ++i)
+        {
+        c[i].r = ch[i].r*fct;
+        c[i].i = ch[i].i*fct;
+        }
+    else
+      memcpy (c,p1,len*sizeof(cmplx));
+    }
+  else
+    if (fct!=1.)
+      for (size_t i=0; i<len; ++i)
+        {
+        c[i].r *= fct;
+        c[i].i *= fct;
+        }
   DEALLOC(ch);
   }
 
