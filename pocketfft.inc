@@ -401,7 +401,22 @@ NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
       }
 
     size_t iwal=2*l;
-    for (size_t j=3, jc=ip-3; j<ipph; ++j, --jc)
+    size_t j=3, jc=ip-3;
+    for (; j<ipph-1; j+=2, jc-=2)
+      {
+      iwal+=l; if (iwal>ip) iwal-=ip;
+      cmplx xwal=wal[iwal];
+      iwal+=l; if (iwal>ip) iwal-=ip;
+      cmplx xwal2=wal[iwal];
+      for (size_t ik=0; ik<idl1; ++ik)
+        {
+        CX2(ik,l).r += CH2(ik,j).r*xwal.r+CH2(ik,j+1).r*xwal2.r;
+        CX2(ik,l).i += CH2(ik,j).i*xwal.r+CH2(ik,j+1).i*xwal2.r;
+        CX2(ik,lc).r -= CH2(ik,jc).i*xwal.i+CH2(ik,jc-1).i*xwal2.i;
+        CX2(ik,lc).i += CH2(ik,jc).r*xwal.i+CH2(ik,jc-1).r*xwal2.i;
+        }
+      }
+    for (; j<ipph; ++j, --jc)
       {
       iwal+=l; if (iwal>ip) iwal-=ip;
       cmplx xwal=wal[iwal];
