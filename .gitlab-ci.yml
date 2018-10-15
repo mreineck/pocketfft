@@ -9,7 +9,7 @@ tarball:
     - ls
   script:
     - apt-get update
-    - apt-get install autotools-dev autoconf automake
+    - apt-get install -y autotools-dev autoconf automake
     - autoreconf -i
     - ./configure
     - make distcheck
