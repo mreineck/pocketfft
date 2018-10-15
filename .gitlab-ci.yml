@@ -1,0 +1,16 @@
+image: debian:testing-slim
+
+stages:
+  - release
+
+tarball:
+  stage: release
+  before_script:
+    - ls
+  script:
+    - autoreconf -i
+    - ./configure
+    - make distcheck
+  artifacts:
+    paths:
+    - "*.tar.gz"
