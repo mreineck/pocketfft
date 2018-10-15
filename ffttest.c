@@ -36,10 +36,11 @@ static double errcalc (double *data, double *odata, size_t length)
   return sqrt(errsum/sum);
   }
 
-static void test_real(void)
+static int test_real(void)
   {
   double data[maxlen], odata[maxlen];
   const double epsilon=2e-15;
+  int ret = 0;
   fill_random (odata, maxlen);
   for (int length=1; length<=maxlen; ++length)
     {
@@ -49,15 +50,21 @@ static void test_real(void)
     rfft_backward (plan, data, 1./length);
     destroy_rfft_plan (plan);
     double err = errcalc (data, odata, length);
-    if (err>epsilon) printf("problem at real length %i: %e\n",length,err);
+    if (err>epsilon)
+      {
+      printf("problem at real length %i: %e\n",length,err);
+      ret = 1;
+      }
     }
+  return ret;
   }
 
-static void test_complex(void)
+static int test_complex(void)
   {
   double data[2*maxlen], odata[2*maxlen];
   fill_random (odata, 2*maxlen);
   const double epsilon=2e-15;
+  int ret = 0;
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,2*length*sizeof(double));
@@ -66,13 +73,19 @@ static void test_complex(void)
     cfft_backward(plan, data, 1./length);
     destroy_cfft_plan (plan);
     double err = errcalc (data, odata, 2*length);
-    if (err>epsilon) printf("problem at complex length %i: %e\n",length,err);
+    if (err>epsilon)
+      {
+      printf("problem at complex length %i: %e\n",length,err);
+      ret = 1;
+      }
     }
+  return ret;
   }
 
 int main(void)
   {
-  test_real();
-  test_complex();
-  return 0;
+  int ret = 0;
+  ret = test_real();
+  ret += test_complex();
+  return ret;
   }
