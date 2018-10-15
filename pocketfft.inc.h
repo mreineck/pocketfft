@@ -16,7 +16,7 @@
 #define CONJFLIPC(a) { double tmp_=a.r; a.r=-a.i; a.i=tmp_; }
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
-#define WA(x,i) wa[(i)+(x)*ido]
+#define WA(x,i) wa[(i)-1+(x)*(ido-1)]
 
 #ifdef BACKWARD
 #define PSIGN +
@@ -243,12 +243,12 @@ NOINLINE static void X(7)(size_t ido, size_t l1, const cmplx * restrict cc,
   cmplx * restrict ch, const cmplx * restrict wa)
   {
   const size_t cdim=7;
-  const double tw1r= 0.623489801858733558,
-               tw1i= PSIGN 0.781831482468029787,
-               tw2r= -0.222520933956314336,
-               tw2i= PSIGN 0.974927912181823623,
-               tw3r= -0.900968867902419081,
-               tw3i= PSIGN 0.433883739117558215;
+  const double tw1r= 0.623489801858733530525,
+               tw1i= PSIGN 0.7818314824680298087084,
+               tw2r= -0.222520933956314404289,
+               tw2i= PSIGN 0.9749279121818236070181,
+               tw3r= -0.9009688679024191262361,
+               tw3i= PSIGN 0.4338837391175581204758;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -310,16 +310,16 @@ NOINLINE static void X(11)(size_t ido, size_t l1, const cmplx * restrict cc,
   cmplx * restrict ch, const cmplx * restrict wa)
   {
   const size_t cdim=11;
-  const double tw1r =        0.841253532831181181,
-               tw1i = PSIGN  0.540640817455597563,
-               tw2r =        0.415415013001886466,
-               tw2i = PSIGN  0.909631995354518353,
-               tw3r =       -0.142314838273285074,
-               tw3i = PSIGN  0.989821441880932742,
-               tw4r =       -0.654860733945284997,
-               tw4i = PSIGN  0.755749574354258342,
-               tw5r =       -0.959492973614497359,
-               tw5i = PSIGN  0.281732556841429804;
+  const double tw1r =        0.8412535328311811688618,
+               tw1i = PSIGN  0.5406408174555975821076,
+               tw2r =        0.4154150130018864255293,
+               tw2i = PSIGN  0.9096319953545183714117,
+               tw3r =       -0.1423148382732851404438,
+               tw3i = PSIGN  0.9898214418809327323761,
+               tw4r =       -0.6548607339452850640569,
+               tw4i = PSIGN  0.755749574354258283774,
+               tw5r =       -0.9594929736144973898904,
+               tw5i = PSIGN  0.2817325568414296977114;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -358,17 +358,19 @@ NOINLINE static void X(11)(size_t ido, size_t l1, const cmplx * restrict cc,
 #define CX2(a,b) cc[(a)+idl1*(b)]
 #define CH2(a,b) ch[(a)+idl1*(b)]
 
-NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
-  cmplx * restrict cc, cmplx * restrict ch, const cmplx * restrict wa)
+NOINLINE static int X(g)(size_t ido, size_t ip, size_t l1,
+  cmplx * restrict cc, cmplx * restrict ch, const cmplx * restrict wa,
+  const cmplx * restrict csarr)
   {
   const size_t cdim=ip;
   size_t ipph = (ip+1)/2;
   size_t idl1 = ido*l1;
 
   cmplx * restrict wal=RALLOC(cmplx,ip);
+  if (!wal) return -1;
   wal[0]=(cmplx){1.,0.};
   for (size_t i=1; i<ip; ++i)
-    wal[i]=(cmplx){wa[ido*(i-1)].r,PSIGN wa[ido*(i-1)].i};
+    wal[i]=(cmplx){csarr[i].r,PSIGN csarr[i].i};
 
   for (size_t k=0; k<l1; ++k)
     for (size_t i=0; i<ido; ++i)
@@ -446,25 +448,27 @@ NOINLINE static void X(g)(size_t ido, size_t ip, size_t l1,
           {
           cmplx x1, x2;
           PMC(x1,x2,CX(i,k,j),CX(i,k,jc))
-          size_t idij=(j-1)*ido+i;
+          size_t idij=(j-1)*(ido-1)+i-1;
           MULPMSIGNC (CX(i,k,j),wa[idij],x1)
-          idij=(jc-1)*ido+i;
+          idij=(jc-1)*(ido-1)+i-1;
           MULPMSIGNC (CX(i,k,jc),wa[idij],x2)
           }
         }
     }
+  return 0;
   }
 
 #undef CH2
 #undef CX2
 #undef CX
 
-static void X(_all)(cfftp_plan plan, cmplx c[], double fct)
+WARN_UNUSED_RESULT static int X(_all)(cfftp_plan plan, cmplx c[], double fct)
   {
-  if (plan->length==1) return;
+  if (plan->length==1) return 0;
   size_t len=plan->length;
   size_t l1=1, nf=plan->nfct;
   cmplx *ch = RALLOC(cmplx, len);
+  if (!ch) return -1;
   cmplx *p1=c, *p2=ch;
 
   for(size_t k1=0; k1<nf; k1++)
@@ -480,7 +484,8 @@ static void X(_all)(cfftp_plan plan, cmplx c[], double fct)
     else if(ip==11) X(11)(ido, l1, p1, p2, plan->fct[k1].tw);
     else
       {
-      X( g)(ido, ip, l1, p1, p2, plan->fct[k1].tw);
+      if (X( g)(ido, ip, l1, p1, p2, plan->fct[k1].tw, plan->fct[k1].tws))
+        { DEALLOC(ch); return -1; }
       SWAP(p1,p2,cmplx *);
       }
     SWAP(p1,p2,cmplx *);
@@ -505,6 +510,7 @@ static void X(_all)(cfftp_plan plan, cmplx c[], double fct)
         c[i].i *= fct;
         }
   DEALLOC(ch);
+  return 0;
   }
 
 #undef PSIGN

@@ -18,141 +18,111 @@
 #include "trig_utils.h"
 
 /* Code for accurate calculation of sin/cos(2*pi*m/n). Adapted from FFTW. */
-void fracsincos(int m, int n, double *s, double *c)
+static void fracsincos(int m, int n, double *res)
   {
   static const double twopi=6.28318530717958647692;
-  UTIL_ASSERT (n>0,"denominator must be positive");
   int quarter_n = n;
   unsigned octant = 0;
-  m%=n;
-  if (m<0) m+=n;
 
   n<<=2;
   m<<=2;
 
-  if (m > n - m) { m = n - m; octant |= 4; }
-  if (m - quarter_n > 0) { m = m - quarter_n; octant |= 2; }
-  if (m > quarter_n - m) { m = quarter_n - m; octant |= 1; }
+  if (m > n-m) { m = n-m; octant |= 4; }
+  if (m-quarter_n > 0) { m = m-quarter_n; octant |= 2; }
+  if (m > quarter_n-m) { m = quarter_n-m; octant |= 1; }
 
   double theta = (twopi*m)/n;
-  *c = cos(theta); *s = sin(theta);
+  double c = cos(theta), s = sin(theta);
 
-  if (octant & 1) { double t = *c; *c = *s; *s = t; }
-  if (octant & 2) { double t = *c; *c = -(*s); *s = t; }
-  if (octant & 4) { *s = -(*s); }
+  if (octant & 1) { double t = c; c =  s; s = t; }
+  if (octant & 2) { double t = c; c = -s; s = t; }
+  if (octant & 4) { s = -s; }
+  res[0]=c; res[1]=s;
   }
 
-static void fracsincos_multi_priv (size_t n, int num, int den, double *s,
-  double *c, int stride, int exact)
+static void fracsincos_multi_priv (size_t n, int den, double *res)
   {
   if (n==0) return;
-  s[0] = 0.; c[0]=1.;
+  res[0]=1.; res[1]=0.;
   if (n==1) return;
-  if (exact)
+  size_t l1=(size_t)sqrt(n*0.5);
+  if (l1<1) l1=1;
+  for (size_t i=1; i<=l1; ++i)
+    fracsincos(i,den,&res[2*i]);
+  size_t center = 2*l1+1;
+  while (center+l1<n)
     {
-    for (size_t i=1; i<n; ++i)
-      fracsincos(i*num,den,&s[i*stride],&c[i*stride]);
-    }
-  else
-    {
-    size_t l1=(size_t)sqrt(n);
-    double scur=0.,ccur=1.;
-    for (size_t i=1,m=0,a=1; i<n; ++i,++a)
+    double cs[2];
+    fracsincos(center,den,cs);
+    res[2*center]=cs[0]; res[2*center+1]=cs[1];
+    for (size_t i=1; i<=l1; ++i)
       {
-      if (a==l1)
+      double csx[2]={res[2*i], res[2*i+1]};
+      double rr = csx[0]*cs[0], ii = csx[1]*cs[1],
+             ir = csx[1]*cs[0], ri = csx[0]*cs[1];
+      res[2*(center+i)  ] = rr - ii;
+      res[2*(center+i)+1] = ir + ri;
+      res[2*(center-i)  ] = rr + ii;
+      res[2*(center-i)+1] = ri - ir;
+      }
+    center += 2*l1+1;
+    }
+  if (center-l1>=n)
+    return;
+  {
+  double cs[2];
+  fracsincos(center,den,cs);
+  if (center<n)
+    { res[2*center]=cs[0]; res[2*center+1]=cs[1]; }
+  for (size_t i=1; i<=l1; ++i)
+    {
+    if (center-i<n)
+      {
+      double csx[2]={res[2*i], res[2*i+1]};
+      double rr = csx[0]*cs[0], ii = csx[1]*cs[1],
+             ir = csx[1]*cs[0], ri = csx[0]*cs[1];
+      if (center+i<n)
         {
-        a=0;
-        ++m;
-        fracsincos(i*num,den,&scur,&ccur);
-        s[i*stride]=scur; c[i*stride]=ccur;
+        res[2*(center+i)  ] = rr - ii;
+        res[2*(center+i)+1] = ir + ri;
         }
-      else
-        {
-        if (m==0)
-          fracsincos(i*num,den,&s[i*stride],&c[i*stride]);
-        else
-          {
-          c[i*stride]=ccur*c[a*stride] - scur*s[a*stride];
-          s[i*stride]=ccur*s[a*stride] + scur*c[a*stride];
-          }
-        }
+      res[2*(center-i)  ] = rr + ii;
+      res[2*(center-i)+1] = ri - ir;
       }
     }
   }
+  }
 
-static void sincos_2pibyn_priv (size_t n, size_t nang, double *s, double *c,
-  int stride, int exact)
+void sincos_2pibyn(size_t n, double *res)
   {
   // nmax: number of sin/cos pairs that must be genuinely computed; the rest
   // can be obtained via symmetries
   size_t nmax = ((n&3)==0) ? n/8+1 : ( ((n&1)==0) ? n/4+1 : n/2+1 );
-  size_t ngoal = (nang<nmax) ? nang : nmax;
-  fracsincos_multi_priv (ngoal, 1, n, s, c, stride, exact);
-  size_t ndone=ngoal;
-  if (ndone==nang) return;
+  fracsincos_multi_priv (nmax, n, res);
+  size_t ndone=nmax;
   if ((n&3)==0)
     {
-    ngoal=n/4+1;
-    if (nang<ngoal) ngoal=nang;
+    size_t ngoal=n/4+1;
     for (size_t i=ndone; i<ngoal; ++i)
       {
-      s[i*stride]=c[(n/4-i)*stride];
-      c[i*stride]=s[(n/4-i)*stride];
+      res[2*i+1]=res[2*(n/4-i)  ];
+      res[2*i  ]=res[2*(n/4-i)+1];
       }
     ndone=ngoal;
-    if (ngoal==nang) return;
     }
   if ((n&1)==0)
     {
-    ngoal=n/2+1;
-    if (nang<ngoal) ngoal=nang;
+    size_t ngoal=n/2+1;
     for (size_t i=ndone; i<ngoal; ++i)
       {
-      c[i*stride]=-c[(n/2-i)*stride];
-      s[i*stride]= s[(n/2-i)*stride];
+      res[2*i  ]=-res[2*(n/2-i)  ];
+      res[2*i+1]= res[2*(n/2-i)+1];
       }
     ndone=ngoal;
-    if (ngoal==nang) return;
     }
-  ngoal=n;
-  if (nang<ngoal) ngoal=nang;
-  for (size_t i=ndone; i<ngoal; ++i)
+  for (size_t i=ndone; i<n; ++i)
     {
-    c[i*stride]= c[(n-i)*stride];
-    s[i*stride]=-s[(n-i)*stride];
-    }
-  ndone=ngoal;
-  if (ngoal==nang) return;
-  for (size_t i=ndone; i<nang; ++i)
-    {
-    c[i*stride]= c[(i-n)*stride];
-    s[i*stride]= s[(i-n)*stride];
+    res[2*i  ]= res[2*(n-i)  ];
+    res[2*i+1]=-res[2*(n-i)+1];
     }
   }
-
-void sincos_2pibyn (size_t n, size_t nang, double *s, double *c, int stride)
-  { sincos_2pibyn_priv (n,nang,s,c,stride,0); }
-
-void triggen_init (struct triggen *tg, size_t n)
-  {
-  tg->n=n;
-  tg->ilg=1;
-  while ((((size_t)1)<<(2*tg->ilg))<n) ++tg->ilg;
-  size_t s=((size_t)1)<<tg->ilg;
-  tg->mask=s-1;
-  size_t s1=n/s+1;
-  tg->t1=RALLOC(double,2*(s1+s));
-  tg->t2=tg->t1+2*s1;
-  fracsincos_multi_priv(s1,s,n,&(tg->t1[1]),&(tg->t1[0]),2,1);
-  sincos_2pibyn_priv(n,s,&(tg->t2[1]),&(tg->t2[0]),2,1);
-  }
-void triggen_get (const struct triggen *tg,size_t i, double *s, double *c)
-  {
-  if (i>=tg->n) i%=tg->n;
-  size_t i1=i>>tg->ilg,
-         i2=i&tg->mask;
-  *c = tg->t1[2*i1]*tg->t2[2*i2  ] - tg->t1[2*i1+1]*tg->t2[2*i2+1];
-  *s = tg->t1[2*i1]*tg->t2[2*i2+1] + tg->t1[2*i1+1]*tg->t2[2*i2  ];
-  }
-void triggen_destroy (struct triggen *tg)
-  { DEALLOC(tg->t1); }

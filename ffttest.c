@@ -19,8 +19,6 @@
 
 #define maxlen 8192
 
-#undef TEST_SIMPLE_INTERFACE
-
 static void fill_random (double *data, size_t length)
   {
   for (size_t m=0; m<length; ++m)
@@ -46,15 +44,10 @@ static void test_real(void)
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,length*sizeof(double));
-#ifdef TEST_SIMPLE_INTERFACE
-    rfft_forward_noplan(data, length);
-    rfft_backward_noplan(data, length);
-#else
     rfft_plan plan = make_rfft_plan (length);
     rfft_forward (plan, data, 1.);
     rfft_backward (plan, data, 1./length);
     destroy_rfft_plan (plan);
-#endif
     double err = errcalc (data, odata, length);
     if (err>epsilon) printf("problem at real length %i: %e\n",length,err);
     }
@@ -79,9 +72,6 @@ static void test_complex(void)
 
 int main(void)
   {
-  double *dummy = RALLOC(double,100000);
-  DEALLOC(dummy);
-  //gettime(256, 10000);
   test_real();
   test_complex();
   return 0;
