@@ -8,6 +8,7 @@ tarball:
   before_script:
     - ls
   script:
+    - apt install autotools-dev autoconf automake
     - autoreconf -i
     - ./configure
     - make distcheck
