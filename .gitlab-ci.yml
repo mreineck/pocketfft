@@ -9,9 +9,9 @@ tarball:
     - ls
   script:
     - apt-get update
-    - apt-get install -y autotools-dev autoconf automake libtool
+    - apt-get install -y autotools-dev autoconf automake libtool make
     - autoreconf -i
-    - ./configure --disable-dependency-tracking
+    - ./configure
     - make distcheck
   artifacts:
     paths:
