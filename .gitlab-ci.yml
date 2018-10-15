@@ -11,7 +11,7 @@ tarball:
     - apt-get update
     - apt-get install -y autotools-dev autoconf automake libtool
     - autoreconf -i
-    - ./configure
+    - ./configure --disable-dependency-tracking
     - make distcheck
   artifacts:
     paths:
