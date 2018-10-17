@@ -14,14 +14,146 @@
 #include <string.h>
 
 #include "pocketfft.h"
-#include "c_utils.h"
-#include "trig_utils.h"
 
 #ifdef __GNUC__
 #define NOINLINE __attribute__((noinline))
 #else
 #define NOINLINE
 #endif
+
+/*! \def RALLOC(type,num)
+    Allocate space for \a num objects of type \a type. Make sure that the
+    allocation succeeded, else stop the program with an error. Cast the
+    resulting pointer to \a (type*). */
+#define RALLOC(type,num) \
+  ((type *)malloc((num)*sizeof(type)))
+/*! \def DEALLOC(ptr)
+    Deallocate \a ptr. It must have been allocated using \a ALLOC or
+    \a RALLOC. */
+#define DEALLOC(ptr) \
+  do { free(ptr); (ptr)=NULL; } while(0)
+
+#define SWAP(a,b,type) \
+  do { type tmp_=(a); (a)=(b); (b)=tmp_; } while(0)
+
+#ifdef __GNUC__
+#define NOINLINE __attribute__((noinline))
+#define WARN_UNUSED_RESULT __attribute__ ((warn_unused_result))
+#else
+#define NOINLINE
+#define WARN_UNUSED_RESULT
+#endif
+
+/* Code for accurate calculation of sin/cos(2*pi*m/n). Adapted from FFTW. */
+static void fracsincos(int m, int n, double *res)
+  {
+  static const double twopi=6.28318530717958647692;
+  int quarter_n = n;
+  unsigned octant = 0;
+
+  n<<=2;
+  m<<=2;
+
+  if (m > n-m) { m = n-m; octant |= 4; }
+  if (m-quarter_n > 0) { m = m-quarter_n; octant |= 2; }
+  if (m > quarter_n-m) { m = quarter_n-m; octant |= 1; }
+
+  double theta = (twopi*m)/n;
+  double c = cos(theta), s = sin(theta);
+
+  if (octant & 1) { double t = c; c =  s; s = t; }
+  if (octant & 2) { double t = c; c = -s; s = t; }
+  if (octant & 4) { s = -s; }
+  res[0]=c; res[1]=s;
+  }
+
+static void fracsincos_multi_priv (size_t n, int den, double *res)
+  {
+  if (n==0) return;
+  res[0]=1.; res[1]=0.;
+  if (n==1) return;
+  size_t l1=(size_t)sqrt(n*0.5);
+  if (l1<1) l1=1;
+  for (size_t i=1; i<=l1; ++i)
+    fracsincos(i,den,&res[2*i]);
+  size_t center = 2*l1+1;
+  while (center+l1<n)
+    {
+    double cs[2];
+    fracsincos(center,den,cs);
+    res[2*center]=cs[0]; res[2*center+1]=cs[1];
+    for (size_t i=1; i<=l1; ++i)
+      {
+      double csx[2]={res[2*i], res[2*i+1]};
+      double rr = csx[0]*cs[0], ii = csx[1]*cs[1],
+             ir = csx[1]*cs[0], ri = csx[0]*cs[1];
+      res[2*(center+i)  ] = rr - ii;
+      res[2*(center+i)+1] = ir + ri;
+      res[2*(center-i)  ] = rr + ii;
+      res[2*(center-i)+1] = ri - ir;
+      }
+    center += 2*l1+1;
+    }
+  if (center-l1>=n)
+    return;
+  {
+  double cs[2];
+  fracsincos(center,den,cs);
+  if (center<n)
+    { res[2*center]=cs[0]; res[2*center+1]=cs[1]; }
+  for (size_t i=1; i<=l1; ++i)
+    {
+    if (center-i<n)
+      {
+      double csx[2]={res[2*i], res[2*i+1]};
+      double rr = csx[0]*cs[0], ii = csx[1]*cs[1],
+             ir = csx[1]*cs[0], ri = csx[0]*cs[1];
+      if (center+i<n)
+        {
+        res[2*(center+i)  ] = rr - ii;
+        res[2*(center+i)+1] = ir + ri;
+        }
+      res[2*(center-i)  ] = rr + ii;
+      res[2*(center-i)+1] = ri - ir;
+      }
+    }
+  }
+  }
+
+static void sincos_2pibyn(size_t n, double *res)
+  {
+  // nmax: number of sin/cos pairs that must be genuinely computed; the rest
+  // can be obtained via symmetries
+  size_t nmax = ((n&3)==0) ? n/8+1 : ( ((n&1)==0) ? n/4+1 : n/2+1 );
+  fracsincos_multi_priv (nmax, n, res);
+  size_t ndone=nmax;
+  if ((n&3)==0)
+    {
+    size_t ngoal=n/4+1;
+    for (size_t i=ndone; i<ngoal; ++i)
+      {
+      res[2*i+1]=res[2*(n/4-i)  ];
+      res[2*i  ]=res[2*(n/4-i)+1];
+      }
+    ndone=ngoal;
+    }
+  if ((n&1)==0)
+    {
+    size_t ngoal=n/2+1;
+    for (size_t i=ndone; i<ngoal; ++i)
+      {
+      res[2*i  ]=-res[2*(n/2-i)  ];
+      res[2*i+1]= res[2*(n/2-i)+1];
+      }
+    ndone=ngoal;
+    }
+  for (size_t i=ndone; i<n; ++i)
+    {
+    res[2*i  ]= res[2*(n-i)  ];
+    res[2*i+1]=-res[2*(n-i)+1];
+    }
+  }
+
 
 static size_t largest_prime_factor (size_t n)
   {
@@ -97,24 +229,519 @@ typedef struct cfftp_plan_i
   } cfftp_plan_i;
 typedef struct cfftp_plan_i * cfftp_plan;
 
-#define CONCAT(a,b) a ## b
+#define PMC(a,b,c,d) { a.r=c.r+d.r; a.i=c.i+d.i; b.r=c.r-d.r; b.i=c.i-d.i; }
+#define ADDC(a,b,c) { a.r=b.r+c.r; a.i=b.i+c.i; }
+#define SCALEC(a,b) { a.r*=b; a.i*=b; }
+#define CONJFLIPC(a) { double tmp_=a.r; a.r=-a.i; a.i=tmp_; }
+#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
+#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
+#define WA(x,i) wa[(i)-1+(x)*(ido-1)]
 
-#define X(arg) CONCAT(passb,arg)
-#define BACKWARD
-#include "pocketfft.inc.h"
-#undef BACKWARD
-#undef X
-#define X(arg) CONCAT(passf,arg)
-#include "pocketfft.inc.h"
-#undef X
+#define PMSIGNC(a,b,c,d) { a.r=c.r+sign*d.r; a.i=c.i+sign*d.i; b.r=c.r-sign*d.r; b.i=c.i-sign*d.i; }
+/* a = b*c */
+#define MULPMSIGNC(a,b,c) { a.r=b.r*c.r-sign*b.i*c.i; a.i=b.r*c.i+sign*b.i*c.r; }
+/* a *= b */
+#define MULPMSIGNCEQ(a,b) { double xtmp=a.r; a.r=b.r*a.r-sign*b.i*a.i; a.i=b.r*a.i+sign*b.i*xtmp; }
+
+NOINLINE static void pass2 (size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa, const int sign)
+  {
+  const size_t cdim=2;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
+      for (size_t i=1; i<ido; ++i)
+        {
+        cmplx t;
+        PMC (CH(i,k,0),t,CC(i,0,k),CC(i,1,k))
+        MULPMSIGNC (CH(i,k,1),WA(0,i),t)
+        }
+      }
+  }
+
+#define PREP3(idx) \
+        cmplx t0 = CC(idx,0,k), t1, t2; \
+        PMC (t1,t2,CC(idx,1,k),CC(idx,2,k)) \
+        CH(idx,k,0).r=t0.r+t1.r; \
+        CH(idx,k,0).i=t0.i+t1.i;
+#define PARTSTEP3a(u1,u2,twr,twi) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t0.r+twr*t1.r; \
+        ca.i=t0.i+twr*t1.i; \
+        cb.i=twi*t2.r; \
+        cb.r=-(twi*t2.i); \
+        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) \
+        }
+#define PARTSTEP3(u1,u2,twr,twi) \
+        { \
+        cmplx ca,cb,da,db; \
+        ca.r=t0.r+twr*t1.r; \
+        ca.i=t0.i+twr*t1.i; \
+        cb.i=twi*t2.r; \
+        cb.r=-(twi*t2.i); \
+        PMC(da,db,ca,cb) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void pass3 (size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa, const int sign)
+  {
+  const size_t cdim=3;
+  const double tw1r=-0.5, tw1i= sign * 0.86602540378443864676;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP3(0)
+      PARTSTEP3a(1,2,tw1r,tw1i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP3(0)
+      PARTSTEP3a(1,2,tw1r,tw1i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP3(i)
+        PARTSTEP3(1,2,tw1r,tw1i)
+        }
+      }
+  }
+
+NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa, const int sign)
+  {
+  const size_t cdim=4;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      cmplx t1, t2, t3, t4;
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
+      CONJFLIPC(t4)
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
+      PMSIGNC (CH(0,k,1),CH(0,k,3),t1,t4)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      cmplx t1, t2, t3, t4;
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
+      CONJFLIPC(t4)
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
+      PMSIGNC (CH(0,k,1),CH(0,k,3),t1,t4)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        cmplx c2, c3, c4, t1, t2, t3, t4;
+        cmplx cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
+        PMC(t2,t1,cc0,cc2)
+        PMC(t3,t4,cc1,cc3)
+        CONJFLIPC(t4)
+        cmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
+        PMC(CH(i,k,0),c3,t2,t3)
+        PMSIGNC (c2,c4,t1,t4)
+        MULPMSIGNC (CH(i,k,1),wa0,c2)
+        MULPMSIGNC (CH(i,k,2),wa1,c3)
+        MULPMSIGNC (CH(i,k,3),wa2,c4)
+        }
+      }
+  }
+
+#define PREP5(idx) \
+        cmplx t0 = CC(idx,0,k), t1, t2, t3, t4; \
+        PMC (t1,t4,CC(idx,1,k),CC(idx,4,k)) \
+        PMC (t2,t3,CC(idx,2,k),CC(idx,3,k)) \
+        CH(idx,k,0).r=t0.r+t1.r+t2.r; \
+        CH(idx,k,0).i=t0.i+t1.i+t2.i;
+
+#define PARTSTEP5a(u1,u2,twar,twbr,twai,twbi) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t0.r+twar*t1.r+twbr*t2.r; \
+        ca.i=t0.i+twar*t1.i+twbr*t2.i; \
+        cb.i=twai*t4.r twbi*t3.r; \
+        cb.r=-(twai*t4.i twbi*t3.i); \
+        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) \
+        }
+#define PARTSTEP5(u1,u2,twar,twbr,twai,twbi) \
+        { \
+        cmplx ca,cb,da,db; \
+        ca.r=t0.r+twar*t1.r+twbr*t2.r; \
+        ca.i=t0.i+twar*t1.i+twbr*t2.i; \
+        cb.i=twai*t4.r twbi*t3.r; \
+        cb.r=-(twai*t4.i twbi*t3.i); \
+        PMC(da,db,ca,cb) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void pass5 (size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa, const int sign)
+  {
+  const size_t cdim=5;
+  const double tw1r= 0.3090169943749474241,
+               tw1i= sign * 0.95105651629515357212,
+               tw2r= -0.8090169943749474241,
+               tw2i= sign * 0.58778525229247312917;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP5(0)
+      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP5(0)
+      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP5(i)
+        PARTSTEP5(1,4,tw1r,tw2r,+tw1i,+tw2i)
+        PARTSTEP5(2,3,tw2r,tw1r,+tw2i,-tw1i)
+        }
+      }
+  }
+
+#define PREP7(idx) \
+        cmplx t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7; \
+        PMC (t2,t7,CC(idx,1,k),CC(idx,6,k)) \
+        PMC (t3,t6,CC(idx,2,k),CC(idx,5,k)) \
+        PMC (t4,t5,CC(idx,3,k),CC(idx,4,k)) \
+        CH(idx,k,0).r=t1.r+t2.r+t3.r+t4.r; \
+        CH(idx,k,0).i=t1.i+t2.i+t3.i+t4.i;
+
+#define PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,out1,out2) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t1.r+x1*t2.r+x2*t3.r+x3*t4.r; \
+        ca.i=t1.i+x1*t2.i+x2*t3.i+x3*t4.i; \
+        cb.i=y1*t7.r y2*t6.r y3*t5.r; \
+        cb.r=-(y1*t7.i y2*t6.i y3*t5.i); \
+        PMC(out1,out2,ca,cb) \
+        }
+#define PARTSTEP7a(u1,u2,x1,x2,x3,y1,y2,y3) \
+        PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,CH(0,k,u1),CH(0,k,u2))
+#define PARTSTEP7(u1,u2,x1,x2,x3,y1,y2,y3) \
+        { \
+        cmplx da,db; \
+        PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,da,db) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void pass7(size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa, const int sign)
+  {
+  const size_t cdim=7;
+  const double tw1r= 0.623489801858733530525,
+               tw1i= sign * 0.7818314824680298087084,
+               tw2r= -0.222520933956314404289,
+               tw2i= sign * 0.9749279121818236070181,
+               tw3r= -0.9009688679024191262361,
+               tw3i= sign * 0.4338837391175581204758;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP7(0)
+      PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+      PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+      PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP7(0)
+      PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+      PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+      PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP7(i)
+        PARTSTEP7(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+        PARTSTEP7(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+        PARTSTEP7(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+        }
+      }
+  }
+
+#define PREP11(idx) \
+        cmplx t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7, t8, t9, t10, t11; \
+        PMC (t2,t11,CC(idx,1,k),CC(idx,10,k)) \
+        PMC (t3,t10,CC(idx,2,k),CC(idx, 9,k)) \
+        PMC (t4,t9 ,CC(idx,3,k),CC(idx, 8,k)) \
+        PMC (t5,t8 ,CC(idx,4,k),CC(idx, 7,k)) \
+        PMC (t6,t7 ,CC(idx,5,k),CC(idx, 6,k)) \
+        CH(idx,k,0).r=t1.r+t2.r+t3.r+t4.r+t5.r+t6.r; \
+        CH(idx,k,0).i=t1.i+t2.i+t3.i+t4.i+t5.i+t6.i;
+
+#define PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,out1,out2) \
+        { \
+        cmplx ca,cb; \
+        ca.r=t1.r+x1*t2.r+x2*t3.r+x3*t4.r+x4*t5.r+x5*t6.r; \
+        ca.i=t1.i+x1*t2.i+x2*t3.i+x3*t4.i+x4*t5.i+x5*t6.i; \
+        cb.i=y1*t11.r y2*t10.r y3*t9.r y4*t8.r y5*t7.r; \
+        cb.r=-(y1*t11.i y2*t10.i y3*t9.i y4*t8.i y5*t7.i ); \
+        PMC(out1,out2,ca,cb) \
+        }
+#define PARTSTEP11a(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5) \
+        PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,CH(0,k,u1),CH(0,k,u2))
+#define PARTSTEP11(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5) \
+        { \
+        cmplx da,db; \
+        PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,da,db) \
+        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
+        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        }
+
+NOINLINE static void pass11 (size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa, const int sign)
+  {
+  const size_t cdim=11;
+  const double tw1r =        0.8412535328311811688618,
+               tw1i = sign * 0.5406408174555975821076,
+               tw2r =        0.4154150130018864255293,
+               tw2i = sign * 0.9096319953545183714117,
+               tw3r =       -0.1423148382732851404438,
+               tw3i = sign * 0.9898214418809327323761,
+               tw4r =       -0.6548607339452850640569,
+               tw4i = sign * 0.755749574354258283774,
+               tw5r =       -0.9594929736144973898904,
+               tw5i = sign * 0.2817325568414296977114;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      PREP11(0)
+      PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+      PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+      PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+      PARTSTEP11a(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+      PARTSTEP11a(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      {
+      PREP11(0)
+      PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+      PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+      PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+      PARTSTEP11a(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+      PARTSTEP11a(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+      }
+      for (size_t i=1; i<ido; ++i)
+        {
+        PREP11(i)
+        PARTSTEP11(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+        PARTSTEP11(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+        PARTSTEP11(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+        PARTSTEP11(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+        PARTSTEP11(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+        }
+      }
+  }
+
+#define CX(a,b,c) cc[(a)+ido*((b)+l1*(c))]
+#define CX2(a,b) cc[(a)+idl1*(b)]
+#define CH2(a,b) ch[(a)+idl1*(b)]
+
+NOINLINE static int passg (size_t ido, size_t ip, size_t l1,
+  cmplx * restrict cc, cmplx * restrict ch, const cmplx * restrict wa,
+  const cmplx * restrict csarr, const int sign)
+  {
+  const size_t cdim=ip;
+  size_t ipph = (ip+1)/2;
+  size_t idl1 = ido*l1;
+
+  cmplx * restrict wal=RALLOC(cmplx,ip);
+  if (!wal) return -1;
+  wal[0]=(cmplx){1.,0.};
+  for (size_t i=1; i<ip; ++i)
+    wal[i]=(cmplx){csarr[i].r,sign*csarr[i].i};
+
+  for (size_t k=0; k<l1; ++k)
+    for (size_t i=0; i<ido; ++i)
+      CH(i,k,0) = CC(i,0,k);
+  for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
+    for (size_t k=0; k<l1; ++k)
+      for (size_t i=0; i<ido; ++i)
+        PMC(CH(i,k,j),CH(i,k,jc),CC(i,j,k),CC(i,jc,k))
+  for (size_t k=0; k<l1; ++k)
+    for (size_t i=0; i<ido; ++i)
+      {
+      cmplx tmp = CH(i,k,0);
+      for (size_t j=1; j<ipph; ++j)
+        ADDC(tmp,tmp,CH(i,k,j))
+      CX(i,k,0) = tmp;
+      }
+  for (size_t l=1, lc=ip-1; l<ipph; ++l, --lc)
+    {
+    // j=0
+    for (size_t ik=0; ik<idl1; ++ik)
+      {
+      CX2(ik,l).r = CH2(ik,0).r+wal[l].r*CH2(ik,1).r+wal[2*l].r*CH2(ik,2).r;
+      CX2(ik,l).i = CH2(ik,0).i+wal[l].r*CH2(ik,1).i+wal[2*l].r*CH2(ik,2).i;
+      CX2(ik,lc).r=-wal[l].i*CH2(ik,ip-1).i-wal[2*l].i*CH2(ik,ip-2).i;
+      CX2(ik,lc).i=wal[l].i*CH2(ik,ip-1).r+wal[2*l].i*CH2(ik,ip-2).r;
+      }
+
+    size_t iwal=2*l;
+    size_t j=3, jc=ip-3;
+    for (; j<ipph-1; j+=2, jc-=2)
+      {
+      iwal+=l; if (iwal>ip) iwal-=ip;
+      cmplx xwal=wal[iwal];
+      iwal+=l; if (iwal>ip) iwal-=ip;
+      cmplx xwal2=wal[iwal];
+      for (size_t ik=0; ik<idl1; ++ik)
+        {
+        CX2(ik,l).r += CH2(ik,j).r*xwal.r+CH2(ik,j+1).r*xwal2.r;
+        CX2(ik,l).i += CH2(ik,j).i*xwal.r+CH2(ik,j+1).i*xwal2.r;
+        CX2(ik,lc).r -= CH2(ik,jc).i*xwal.i+CH2(ik,jc-1).i*xwal2.i;
+        CX2(ik,lc).i += CH2(ik,jc).r*xwal.i+CH2(ik,jc-1).r*xwal2.i;
+        }
+      }
+    for (; j<ipph; ++j, --jc)
+      {
+      iwal+=l; if (iwal>ip) iwal-=ip;
+      cmplx xwal=wal[iwal];
+      for (size_t ik=0; ik<idl1; ++ik)
+        {
+        CX2(ik,l).r += CH2(ik,j).r*xwal.r;
+        CX2(ik,l).i += CH2(ik,j).i*xwal.r;
+        CX2(ik,lc).r -= CH2(ik,jc).i*xwal.i;
+        CX2(ik,lc).i += CH2(ik,jc).r*xwal.i;
+        }
+      }
+    }
+  DEALLOC(wal);
+
+  // shuffling and twiddling
+  if (ido==1)
+    for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
+      for (size_t ik=0; ik<idl1; ++ik)
+        {
+        cmplx t1=CX2(ik,j), t2=CX2(ik,jc);
+        PMC(CX2(ik,j),CX2(ik,jc),t1,t2)
+        }
+  else
+    {
+    for (size_t j=1, jc=ip-1; j<ipph; ++j,--jc)
+      for (size_t k=0; k<l1; ++k)
+        {
+        cmplx t1=CX(0,k,j), t2=CX(0,k,jc);
+        PMC(CX(0,k,j),CX(0,k,jc),t1,t2)
+        for (size_t i=1; i<ido; ++i)
+          {
+          cmplx x1, x2;
+          PMC(x1,x2,CX(i,k,j),CX(i,k,jc))
+          size_t idij=(j-1)*(ido-1)+i-1;
+          MULPMSIGNC (CX(i,k,j),wa[idij],x1)
+          idij=(jc-1)*(ido-1)+i-1;
+          MULPMSIGNC (CX(i,k,jc),wa[idij],x2)
+          }
+        }
+    }
+  return 0;
+  }
+
+#undef CH2
+#undef CX2
+#undef CX
+
+WARN_UNUSED_RESULT static int pass_all(cfftp_plan plan, cmplx c[], double fct,
+  const int sign)
+  {
+  if (plan->length==1) return 0;
+  size_t len=plan->length;
+  size_t l1=1, nf=plan->nfct;
+  cmplx *ch = RALLOC(cmplx, len);
+  if (!ch) return -1;
+  cmplx *p1=c, *p2=ch;
+
+  for(size_t k1=0; k1<nf; k1++)
+    {
+    size_t ip=plan->fct[k1].fct;
+    size_t l2=ip*l1;
+    size_t ido = len/l2;
+    if     (ip==4)  pass4 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    else if(ip==2)  pass2 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    else if(ip==3)  pass3 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    else if(ip==5)  pass5 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    else if(ip==7)  pass7 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    else if(ip==11) pass11(ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    else
+      {
+      if (passg(ido, ip, l1, p1, p2, plan->fct[k1].tw, plan->fct[k1].tws, sign))
+        { DEALLOC(ch); return -1; }
+      SWAP(p1,p2,cmplx *);
+      }
+    SWAP(p1,p2,cmplx *);
+    l1=l2;
+    }
+  if (p1!=c)
+    {
+    if (fct!=1.)
+      for (size_t i=0; i<len; ++i)
+        {
+        c[i].r = ch[i].r*fct;
+        c[i].i = ch[i].i*fct;
+        }
+    else
+      memcpy (c,p1,len*sizeof(cmplx));
+    }
+  else
+    if (fct!=1.)
+      for (size_t i=0; i<len; ++i)
+        {
+        c[i].r *= fct;
+        c[i].i *= fct;
+        }
+  DEALLOC(ch);
+  return 0;
+  }
+
+#undef PMSIGNC
+#undef MULPMSIGNC
+#undef MULPMSIGNCEQ
+
+#undef WA
+#undef CC
+#undef CH
+#undef CONJFLIPC
+#undef SCALEC
+#undef ADDC
+#undef PMC
 
 WARN_UNUSED_RESULT
 static int cfftp_forward(cfftp_plan plan, double c[], double fct)
-  { return passf_all(plan,(cmplx *)c, fct); }
+  { return pass_all(plan,(cmplx *)c, fct, -1); }
 
 WARN_UNUSED_RESULT
 static int cfftp_backward(cfftp_plan plan, double c[], double fct)
-  { return passb_all(plan,(cmplx *)c, fct); }
+  { return pass_all(plan,(cmplx *)c, fct, 1); }
 
 WARN_UNUSED_RESULT
 static int cfftp_factorize (cfftp_plan plan)
@@ -155,7 +782,7 @@ static size_t cfftp_twsize (cfftp_plan plan)
     {
     size_t ip=plan->fct[k].fct, ido= plan->length/(l1*ip);
     twsize+=(ip-1)*(ido-1);
-    if (ip>12)
+    if (ip>11)
       twsize+=ip;
     l1*=ip;
     }
@@ -183,7 +810,7 @@ WARN_UNUSED_RESULT static int cfftp_comp_twiddle (cfftp_plan plan)
         plan->fct[k].tw[(j-1)*(ido-1)+i-1].i = twid[2*j*l1*i+1];
         }
       }
-    if (ip>12)
+    if (ip>11)
       {
       plan->fct[k].tws=plan->mem+memofs;
       memofs+=ip;

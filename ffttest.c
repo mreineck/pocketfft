@@ -15,7 +15,6 @@
 #include <math.h>
 #include <string.h>
 #include "pocketfft.h"
-#include "c_utils.h"
 
 #define maxlen 8192
 
