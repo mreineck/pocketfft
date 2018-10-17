@@ -15,12 +15,6 @@
 
 #include "pocketfft.h"
 
-#ifdef __GNUC__
-#define NOINLINE __attribute__((noinline))
-#else
-#define NOINLINE
-#endif
-
 /*! \def RALLOC(type,num)
     Allocate space for \a num objects of type \a type. Make sure that the
     allocation succeeded, else stop the program with an error. Cast the
@@ -230,12 +224,16 @@ typedef struct cfftp_plan_i
 typedef struct cfftp_plan_i * cfftp_plan;
 
 #define PMC(a,b,c,d) { a.r=c.r+d.r; a.i=c.i+d.i; b.r=c.r-d.r; b.i=c.i-d.i; }
+#define MPC(a,b,c,d) { a.r=c.r-d.r; a.i=c.i-d.i; b.r=c.r+d.r; b.i=c.i+d.i; }
 #define ADDC(a,b,c) { a.r=b.r+c.r; a.i=b.i+c.i; }
 #define SCALEC(a,b) { a.r*=b; a.i*=b; }
 #define CONJFLIPC(a) { double tmp_=a.r; a.r=-a.i; a.i=tmp_; }
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define WA(x,i) wa[(i)-1+(x)*(ido-1)]
+/* a = b*c */
+#define MULPMC(a,b,c) { a.r=b.r*c.r-b.i*c.i; a.i=b.r*c.i+b.i*c.r; }
+#define MULMPC(a,b,c) { a.r=b.r*c.r+b.i*c.i; a.i=b.r*c.i-b.i*c.r; }
 
 #define PMSIGNC(a,b,c,d) { a.r=c.r+sign*d.r; a.i=c.i+sign*d.i; b.r=c.r-sign*d.r; b.i=c.i-sign*d.i; }
 /* a = b*c */
@@ -323,15 +321,26 @@ NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
   const size_t cdim=4;
 
   if (ido==1)
-    for (size_t k=0; k<l1; ++k)
-      {
-      cmplx t1, t2, t3, t4;
-      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
-      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-      CONJFLIPC(t4)
-      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
-      PMSIGNC (CH(0,k,1),CH(0,k,3),t1,t4)
-      }
+    if (sign>0)
+      for (size_t k=0; k<l1; ++k)
+        {
+        cmplx t1, t2, t3, t4;
+        PMC(t2,t1,CC(0,0,k),CC(0,2,k))
+        PMC(t3,t4,CC(0,1,k),CC(0,3,k))
+        CONJFLIPC(t4)
+        PMC(CH(0,k,0),CH(0,k,2),t2,t3)
+        PMC (CH(0,k,1),CH(0,k,3),t1,t4)
+        }
+    else
+      for (size_t k=0; k<l1; ++k)
+        {
+        cmplx t1, t2, t3, t4;
+        PMC(t2,t1,CC(0,0,k),CC(0,2,k))
+        PMC(t3,t4,CC(0,1,k),CC(0,3,k))
+        CONJFLIPC(t4)
+        PMC(CH(0,k,0),CH(0,k,2),t2,t3)
+        MPC (CH(0,k,1),CH(0,k,3),t1,t4)
+        }
   else
     for (size_t k=0; k<l1; ++k)
       {
@@ -343,20 +352,36 @@ NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
       PMC(CH(0,k,0),CH(0,k,2),t2,t3)
       PMSIGNC (CH(0,k,1),CH(0,k,3),t1,t4)
       }
-      for (size_t i=1; i<ido; ++i)
-        {
-        cmplx c2, c3, c4, t1, t2, t3, t4;
-        cmplx cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
-        PMC(t2,t1,cc0,cc2)
-        PMC(t3,t4,cc1,cc3)
-        CONJFLIPC(t4)
-        cmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
-        PMC(CH(i,k,0),c3,t2,t3)
-        PMSIGNC (c2,c4,t1,t4)
-        MULPMSIGNC (CH(i,k,1),wa0,c2)
-        MULPMSIGNC (CH(i,k,2),wa1,c3)
-        MULPMSIGNC (CH(i,k,3),wa2,c4)
-        }
+      if (sign>0)
+        for (size_t i=1; i<ido; ++i)
+          {
+          cmplx c2, c3, c4, t1, t2, t3, t4;
+          cmplx cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
+          PMC(t2,t1,cc0,cc2)
+          PMC(t3,t4,cc1,cc3)
+          CONJFLIPC(t4)
+          cmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
+          PMC(CH(i,k,0),c3,t2,t3)
+          PMC (c2,c4,t1,t4)
+          MULPMC (CH(i,k,1),wa0,c2)
+          MULPMC (CH(i,k,2),wa1,c3)
+          MULPMC (CH(i,k,3),wa2,c4)
+          }
+      else
+        for (size_t i=1; i<ido; ++i)
+          {
+          cmplx c2, c3, c4, t1, t2, t3, t4;
+          cmplx cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
+          PMC(t2,t1,cc0,cc2)
+          PMC(t3,t4,cc1,cc3)
+          CONJFLIPC(t4)
+          cmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
+          PMC(CH(i,k,0),c3,t2,t3)
+          MPC (c2,c4,t1,t4)
+          MULMPC (CH(i,k,1),wa0,c2)
+          MULMPC (CH(i,k,2),wa1,c3)
+          MULMPC (CH(i,k,3),wa2,c4)
+          }
       }
   }
 
@@ -724,6 +749,8 @@ WARN_UNUSED_RESULT static int pass_all(cfftp_plan plan, cmplx c[], double fct,
   }
 
 #undef PMSIGNC
+#undef MULPMC
+#undef MULMPC
 #undef MULPMSIGNC
 #undef MULPMSIGNCEQ
 
@@ -733,6 +760,7 @@ WARN_UNUSED_RESULT static int pass_all(cfftp_plan plan, cmplx c[], double fct,
 #undef CONJFLIPC
 #undef SCALEC
 #undef ADDC
+#undef MPC
 #undef PMC
 
 WARN_UNUSED_RESULT

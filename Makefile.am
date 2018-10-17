@@ -3,12 +3,8 @@ ACLOCAL_AMFLAGS = -I m4
 lib_LTLIBRARIES = libpocketfft.la
 
 src_pocketfft = \
-  c_utils.h \
-  trig_utils.c \
-  trig_utils.h \
   pocketfft.h \
-  pocketfft.c \
-  pocketfft.inc.h
+  pocketfft.c
 
 include_HEADERS = \
   pocketfft.h
