@@ -1,18 +1,10 @@
 image: debian:testing-slim
 
 stages:
-  - release
+  - testing
 
-tarball:
-  stage: release
-  before_script:
-    - ls
+test:
+  stage: testing
   script:
-    - apt-get update
-    - apt-get install -y autotools-dev autoconf automake libtool make
-    - autoreconf -i
-    - ./configure
-    - make distcheck
-  artifacts:
-    paths:
-    - "*.tar.gz"
+    - gcc -O3 -W -Wall -std=c99 -march=native *.c
+    - ./a.out
