@@ -1325,6 +1325,18 @@ void destroy_rfft_plan (rfft_plan plan)
   DEALLOC(plan);
   }
 
+size_t rfft_length(rfft_plan plan)
+  {
+  if (plan->packplan) return plan->packplan->length;
+  return plan->blueplan->n;
+  }
+
+size_t cfft_length(cfft_plan plan)
+  {
+  if (plan->packplan) return plan->packplan->length;
+  return plan->blueplan->n;
+  }
+
 WARN_UNUSED_RESULT int rfft_backward(rfft_plan plan, double c[], double fct)
   {
   if (plan->packplan)
