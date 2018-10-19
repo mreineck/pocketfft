@@ -38,34 +38,70 @@
 #define WARN_UNUSED_RESULT
 #endif
 
+// adapted from https://stackoverflow.com/questions/42792939/
+// CAUTION: this function only works for arguments in the range [-0.25; 0.25]!
+static void my_sincospi (double a, double *sp, double *cp)
+  {
+  double s = a * a;
+  /* Approximate cos(pi*x) for x in [-0.25,0.25] */
+  double r =     -1.0369917389758117e-4;
+  r = fma (r, s,  1.9294935641298806e-3);
+  r = fma (r, s, -2.5806887942825395e-2);
+  r = fma (r, s,  2.3533063028328211e-1);
+  r = fma (r, s, -1.3352627688538006e+0);
+  r = fma (r, s,  4.0587121264167623e+0);
+  r = fma (r, s, -4.9348022005446790e+0);
+  double c = fma (r, s,  1.0000000000000000e+0);
+  /* Approximate sin(pi*x) for x in [-0.25,0.25] */
+  r =             4.6151442520157035e-4;
+  r = fma (r, s, -7.3700183130883555e-3);
+  r = fma (r, s,  8.2145868949323936e-2);
+  r = fma (r, s, -5.9926452893214921e-1);
+  r = fma (r, s,  2.5501640398732688e+0);
+  r = fma (r, s, -5.1677127800499516e+0);
+  s = s * a;
+  r = r * s;
+  s = fma (a, 3.1415926535897931e+0, r);
+  *sp = s;
+  *cp = c;
+  }
+
 /* Code for accurate calculation of sin/cos(2*pi*m/n). Adapted from FFTW. */
+/* CAUTION: only works for 2*m < n! */
 static void fracsincos(int m, int n, double *res)
   {
-  static const double twopi=6.28318530717958647692;
+  // shortcut for common case
+  if ((m<<3)<=n)
+    { my_sincospi((2.*m)/n, res+1, res); return; }
+
   int quarter_n = n;
   unsigned octant = 0;
 
   n<<=2;
   m<<=2;
 
-  if (m > n-m) { m = n-m; octant |= 4; }
+//  if (m > n-m) { m = n-m; octant |= 4; }
   if (m-quarter_n > 0) { m = m-quarter_n; octant |= 2; }
   if (m > quarter_n-m) { m = quarter_n-m; octant |= 1; }
 
-  double theta = (twopi*m)/n;
-  double c = cos(theta), s = sin(theta);
+  double c, s;
+  my_sincospi((2.*m)/n, &s, &c);
 
   if (octant & 1) { double t = c; c =  s; s = t; }
   if (octant & 2) { double t = c; c = -s; s = t; }
-  if (octant & 4) { s = -s; }
+//  if (octant & 4) { s = -s; }
   res[0]=c; res[1]=s;
   }
 
-static void fracsincos_multi_priv (size_t n, int den, double *res)
+NOINLINE static void fracsincos_multi_priv (size_t n, int den, double *res)
   {
   if (n==0) return;
   res[0]=1.; res[1]=0.;
   if (n==1) return;
+#ifdef FULL_TRIG_ACCURACY
+  for (size_t i=1; i<n; ++i)
+    fracsincos(i,den,res+2*i);
+#else
   size_t l1=(size_t)sqrt(n*0.5);
   if (l1<1) l1=1;
   for (size_t i=1; i<=l1; ++i)
@@ -112,6 +148,7 @@ static void fracsincos_multi_priv (size_t n, int den, double *res)
       }
     }
   }
+#endif
   }
 
 static void sincos_2pibyn(size_t n, double *res)
@@ -831,13 +868,11 @@ WARN_UNUSED_RESULT static int cfftp_comp_twiddle (cfftp_plan plan)
     plan->fct[k].tw=plan->mem+memofs;
     memofs+=(ip-1)*(ido-1);
     for (size_t j=1; j<ip; ++j)
-      {
       for (size_t i=1; i<ido; ++i)
         {
         plan->fct[k].tw[(j-1)*(ido-1)+i-1].r = twid[2*j*l1*i];
         plan->fct[k].tw[(j-1)*(ido-1)+i-1].i = twid[2*j*l1*i+1];
         }
-      }
     if (ip>11)
       {
       plan->fct[k].tws=plan->mem+memofs;
@@ -1620,7 +1655,7 @@ static int rfftp_factorize (rfftp_plan plan)
   return 0;
   }
 
-static size_t rfftp_comp_twsize(rfftp_plan plan)
+static size_t rfftp_twsize(rfftp_plan plan)
   {
   size_t twsize=0, l1=1;
   for (size_t k=0; k<plan->nfct; ++k)
@@ -1682,7 +1717,7 @@ static rfftp_plan make_rfftp_plan (size_t length)
     plan->fct[i]=(rfftp_fctdata){0,0,0};
   if (length==1) return plan;
   if (rfftp_factorize(plan)!=0) { DEALLOC(plan); return NULL; }
-  size_t tws=rfftp_comp_twsize(plan);
+  size_t tws=rfftp_twsize(plan);
   plan->mem=RALLOC(double,tws);
   if (!plan->mem) { DEALLOC(plan); return NULL; }
   if (rfftp_comp_twiddle(plan)!=0)
