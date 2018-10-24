@@ -15,15 +15,8 @@
 
 #include "pocketfft.h"
 
-/*! \def RALLOC(type,num)
-    Allocate space for \a num objects of type \a type. Make sure that the
-    allocation succeeded, else stop the program with an error. Cast the
-    resulting pointer to \a (type*). */
 #define RALLOC(type,num) \
   ((type *)malloc((num)*sizeof(type)))
-/*! \def DEALLOC(ptr)
-    Deallocate \a ptr. It must have been allocated using \a ALLOC or
-    \a RALLOC. */
 #define DEALLOC(ptr) \
   do { free(ptr); (ptr)=NULL; } while(0)
 
@@ -125,33 +118,31 @@ NOINLINE static void calc_first_quadrant(size_t n, double * restrict res)
     }
   }
 
-NOINLINE static void tablesc(int m, int n, const double *restrict tab, double * restrict res)
-  {
-  if ((m<<3)<=n)
-    { res[0]=tab[8*m]; res[1]=tab[8*m+1]; return; }
-
-  int quarter_n = n;
-  unsigned octant = 0;
-
-  n<<=2;
-  m<<=2;
-
-  if (m-quarter_n > 0) { m = m-quarter_n; octant |= 2; }
-  if (m > quarter_n-m) { m = quarter_n-m; octant |= 1; }
-
-  res[0] = tab[2*m]; res[1]=tab[2*m+1];
-
-  if (octant & 1) { double t = res[0]; res[0] =  res[1]; res[1] = t; }
-  if (octant & 2) { double t = res[0]; res[0] = -res[1]; res[1] = t; }
-  }
-
 NOINLINE static void calc_first_half(size_t n, double * restrict res)
   {
-  size_t ndone=(n+1)>>1;
+  int ndone=(n+1)>>1;
   double * p = res+n-1;
   calc_first_octant(n<<2, p);
-  for (size_t i=0; i<ndone; ++i)
-    tablesc(i,n,p,res+2*i);
+  int i4=0, in=n, i=0;
+  for (; i4<=in-i4; ++i, i4+=4) // octant 0
+    {
+    res[2*i] = p[2*i4]; res[2*i+1] = p[2*i4+1];
+    }
+  for (; i4-in <= 0; ++i, i4+=4) // octant 1
+    {
+    int xm = in-i4;
+    res[2*i] = p[2*xm+1]; res[2*i+1] = p[2*xm];
+    }
+  for (; i4<=3*in-i4; ++i, i4+=4) // octant 2
+    {
+    int xm = i4-in;
+    res[2*i] = -p[2*xm+1]; res[2*i+1] = p[2*xm];
+    }
+  for (; i<ndone; ++i, i4+=4) // octant 3
+    {
+    int xm = 2*in-i4;
+    res[2*i] = -p[2*xm]; res[2*i+1] = p[2*xm+1];
+    }
   }
 
 NOINLINE static void fill_first_quadrant(size_t n, double * restrict res)
