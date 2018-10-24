@@ -38,12 +38,21 @@
 #define WARN_UNUSED_RESULT
 #endif
 
+#if 0
+static void fracsincos(size_t m, size_t n, double *restrict res)
+  {
+  static const long double twopi=6.283185307179586476925286766559006L;
+  long double arg = twopi*(long double)m/((long double)n);
+  res[0] = (double)cosl(arg); res[1] = (double)sinl(arg);
+  }
+#endif
+
 // adapted from https://stackoverflow.com/questions/42792939/
 // CAUTION: this function only works for arguments in the range [-0.25; 0.25]!
-static void my_sincospi (double a, double *sp, double *cp)
+static void my_sincosm1pi (double a, double *restrict res)
   {
   double s = a * a;
-  /* Approximate cos(pi*x) for x in [-0.25,0.25] */
+  /* Approximate cos(pi*x)-1 for x in [-0.25,0.25] */
   double r =     -1.0369917389758117e-4;
   r = fma (r, s,  1.9294935641298806e-3);
   r = fma (r, s, -2.5806887942825395e-2);
@@ -51,7 +60,7 @@ static void my_sincospi (double a, double *sp, double *cp)
   r = fma (r, s, -1.3352627688538006e+0);
   r = fma (r, s,  4.0587121264167623e+0);
   r = fma (r, s, -4.9348022005446790e+0);
-  double c = fma (r, s,  1.0000000000000000e+0);
+  double c = r*s;
   /* Approximate sin(pi*x) for x in [-0.25,0.25] */
   r =             4.6151442520157035e-4;
   r = fma (r, s, -7.3700183130883555e-3);
@@ -62,17 +71,64 @@ static void my_sincospi (double a, double *sp, double *cp)
   s = s * a;
   r = r * s;
   s = fma (a, 3.1415926535897931e+0, r);
-  *sp = s;
-  *cp = c;
+  res[0] = c;
+  res[1] = s;
   }
 
-/* Code for accurate calculation of sin/cos(2*pi*m/n). Adapted from FFTW. */
-/* CAUTION: only works for 2*m < n! */
-static void fracsincos(int m, int n, double *res)
+NOINLINE static void calc_first_octant(size_t den, double * restrict res)
   {
-  // shortcut for common case
+  size_t n = (den+4)>>3;
+  if (n==0) return;
+  res[0]=1.; res[1]=0.;
+  if (n==1) return;
+  size_t l1=(size_t)sqrt(n);
+  for (size_t i=1; i<l1; ++i)
+    my_sincosm1pi((2.*i)/den,&res[2*i]);
+  size_t start=l1;
+  while(start<n)
+    {
+    double cs[2];
+    my_sincosm1pi((2.*start)/den,cs);
+    res[2*start] = cs[0]+1.;
+    res[2*start+1] = cs[1];
+    size_t end = l1;
+    if (start+end>n) end = n-start;
+    for (size_t i=1; i<end; ++i)
+      {
+      double csx[2]={res[2*i], res[2*i+1]};
+      res[2*(start+i)] = ((cs[0]*csx[0] - cs[1]*csx[1] + cs[0]) + csx[0]) + 1.;
+      res[2*(start+i)+1] = (cs[0]*csx[1] + cs[1]*csx[0]) + cs[1] + csx[1];
+      }
+    start += l1;
+    }
+  for (size_t i=1; i<l1; ++i)
+    res[2*i] += 1.;
+  }
+
+NOINLINE static void calc_first_quadrant(size_t n, double * restrict res)
+  {
+  double * restrict p = res+n;
+  calc_first_octant(n<<1, p);
+  size_t ndone=(n+2)>>2;
+  size_t i=0, idx1=0, idx2=2*ndone-2;
+  for (; i+1<ndone; i+=2, idx1+=2, idx2-=2)
+    {
+    res[idx1]   = p[2*i];
+    res[idx1+1] = p[2*i+1];
+    res[idx2]   = p[2*i+3];
+    res[idx2+1] = p[2*i+2];
+    }
+  if (i!=ndone)
+    {
+    res[idx1  ] = p[2*i];
+    res[idx1+1] = p[2*i+1];
+    }
+  }
+
+NOINLINE static void tablesc(int m, int n, const double *restrict tab, double * restrict res)
+  {
   if ((m<<3)<=n)
-    { my_sincospi((2.*m)/n, res+1, res); return; }
+    { res[0]=tab[8*m]; res[1]=tab[8*m+1]; return; }
 
   int quarter_n = n;
   unsigned octant = 0;
@@ -80,109 +136,76 @@ static void fracsincos(int m, int n, double *res)
   n<<=2;
   m<<=2;
 
-//  if (m > n-m) { m = n-m; octant |= 4; }
   if (m-quarter_n > 0) { m = m-quarter_n; octant |= 2; }
   if (m > quarter_n-m) { m = quarter_n-m; octant |= 1; }
 
-  double c, s;
-  my_sincospi((2.*m)/n, &s, &c);
+  res[0] = tab[2*m]; res[1]=tab[2*m+1];
 
-  if (octant & 1) { double t = c; c =  s; s = t; }
-  if (octant & 2) { double t = c; c = -s; s = t; }
-//  if (octant & 4) { s = -s; }
-  res[0]=c; res[1]=s;
+  if (octant & 1) { double t = res[0]; res[0] =  res[1]; res[1] = t; }
+  if (octant & 2) { double t = res[0]; res[0] = -res[1]; res[1] = t; }
   }
 
-NOINLINE static void fracsincos_multi_priv (size_t n, int den, double *res)
+NOINLINE static void calc_first_half(size_t n, double * restrict res)
   {
-  if (n==0) return;
-  res[0]=1.; res[1]=0.;
-  if (n==1) return;
-#ifdef FULL_TRIG_ACCURACY
-  for (size_t i=1; i<n; ++i)
-    fracsincos(i,den,res+2*i);
-#else
-  size_t l1=(size_t)sqrt(n*0.5);
-  if (l1<1) l1=1;
-  for (size_t i=1; i<=l1; ++i)
-    fracsincos(i,den,&res[2*i]);
-  size_t center = 2*l1+1;
-  while (center+l1<n)
-    {
-    double cs[2];
-    fracsincos(center,den,cs);
-    res[2*center]=cs[0]; res[2*center+1]=cs[1];
-    for (size_t i=1; i<=l1; ++i)
-      {
-      double csx[2]={res[2*i], res[2*i+1]};
-      double rr = csx[0]*cs[0], ii = csx[1]*cs[1],
-             ir = csx[1]*cs[0], ri = csx[0]*cs[1];
-      res[2*(center+i)  ] = rr - ii;
-      res[2*(center+i)+1] = ir + ri;
-      res[2*(center-i)  ] = rr + ii;
-      res[2*(center-i)+1] = ri - ir;
-      }
-    center += 2*l1+1;
-    }
-  if (center-l1>=n)
-    return;
+  size_t ndone=(n+1)>>1;
+  double * p = res+n-1;
+  calc_first_octant(n<<2, p);
+  for (size_t i=0; i<ndone; ++i)
+    tablesc(i,n,p,res+2*i);
+  }
+
+NOINLINE static void fill_first_quadrant(size_t n, double * restrict res)
   {
-  double cs[2];
-  fracsincos(center,den,cs);
-  if (center<n)
-    { res[2*center]=cs[0]; res[2*center+1]=cs[1]; }
-  for (size_t i=1; i<=l1; ++i)
+  const double hsqt2 = 0.707106781186547524400844362104849;
+  size_t quart = n>>2;
+  if ((n&7)==0)
+    res[quart] = res[quart+1] = hsqt2;
+  for (size_t i=2, j=2*quart-2; i<quart; i+=2, j-=2)
     {
-    if (center-i<n)
-      {
-      double csx[2]={res[2*i], res[2*i+1]};
-      double rr = csx[0]*cs[0], ii = csx[1]*cs[1],
-             ir = csx[1]*cs[0], ri = csx[0]*cs[1];
-      if (center+i<n)
-        {
-        res[2*(center+i)  ] = rr - ii;
-        res[2*(center+i)+1] = ir + ri;
-        }
-      res[2*(center-i)  ] = rr + ii;
-      res[2*(center-i)+1] = ri - ir;
-      }
+    res[j  ] = res[i+1];
+    res[j+1] = res[i  ];
     }
   }
-#endif
+
+NOINLINE static void fill_first_half(size_t n, double * restrict res)
+  {
+  size_t half = n>>1;
+  if ((n&3)==0)
+    { res[half] = 0.; res[half+1] = 1.; }
+  for (size_t i=2, j=2*half-2; i<half; i+=2, j-=2)
+    {
+    res[j  ] = -res[i  ];
+    res[j+1] =  res[i+1];
+    }
   }
 
-static void sincos_2pibyn(size_t n, double *res)
+NOINLINE static void fill_second_half(size_t n, double * restrict res)
   {
-  // nmax: number of sin/cos pairs that must be genuinely computed; the rest
-  // can be obtained via symmetries
-  size_t nmax = ((n&3)==0) ? n/8+1 : ( ((n&1)==0) ? n/4+1 : n/2+1 );
-  fracsincos_multi_priv (nmax, n, res);
-  size_t ndone=nmax;
+  if ((n&1)==0)
+    { res[n] = -1.; res[n+1] = 0.; }
+  for (size_t i=2, j=2*n-2; i<n; i+=2, j-=2)
+    {
+    res[j  ] =  res[i  ];
+    res[j+1] = -res[i+1];
+    }
+  }
+
+NOINLINE static void sincos_2pibyn(size_t n, double * restrict res)
+  {
   if ((n&3)==0)
     {
-    size_t ngoal=n/4+1;
-    for (size_t i=ndone; i<ngoal; ++i)
-      {
-      res[2*i+1]=res[2*(n/4-i)  ];
-      res[2*i  ]=res[2*(n/4-i)+1];
-      }
-    ndone=ngoal;
+    calc_first_octant(n, res);
+    fill_first_quadrant(n, res);
+    fill_first_half(n, res);
     }
-  if ((n&1)==0)
+  else if ((n&1)==0)
     {
-    size_t ngoal=n/2+1;
-    for (size_t i=ndone; i<ngoal; ++i)
-      {
-      res[2*i  ]=-res[2*(n/2-i)  ];
-      res[2*i+1]= res[2*(n/2-i)+1];
-      }
-    ndone=ngoal;
+    calc_first_quadrant(n, res);
+    fill_first_half(n, res);
     }
-  for (size_t i=ndone; i<n; ++i)
-    {
-    res[2*i  ]= res[2*(n-i)  ];
-    res[2*i+1]=-res[2*(n-i)+1];
-    }
+  else
+    calc_first_half(n, res);
+  fill_second_half(n, res);
   }
 
 
@@ -1041,8 +1064,8 @@ NOINLINE static void radf5(size_t ido, size_t l1, const double * restrict cc,
   double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=5;
-  double tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
-     tr12=-0.8090169943749474241, ti12=0.58778525229247312917;
+  static const double tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
+                      tr12=-0.8090169943749474241, ti12=0.58778525229247312917;
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1266,7 +1289,7 @@ NOINLINE static void radb3(size_t ido, size_t l1, const double * restrict cc,
   double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=3;
-  double taur=-0.5, taui=0.86602540378443864676;
+  static const double taur=-0.5, taui=0.86602540378443864676;
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1347,8 +1370,8 @@ NOINLINE static void radb5(size_t ido, size_t l1, const double * restrict cc,
   double * restrict ch, const double * restrict wa)
   {
   const size_t cdim=5;
-  double tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
-     tr12=-0.8090169943749474241, ti12=0.58778525229247312917;
+  static const double tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
+                      tr12=-0.8090169943749474241, ti12=0.58778525229247312917;
 
   for (size_t k=0; k<l1; k++)
     {
