@@ -209,7 +209,7 @@ static size_t largest_prime_factor (size_t n)
 
   size_t limit=(size_t)sqrt(n+0.01);
   for (size_t x=3; x<=limit; x+=2)
-  while ((tmp=(n/x))*x==n)
+  while (((tmp=(n/x))*x)==n)
     {
     res=x;
     n=tmp;
@@ -251,7 +251,9 @@ static size_t good_size(size_t n)
   for (size_t f2=1; f2<bestfac; f2*=2)
     for (size_t f23=f2; f23<bestfac; f23*=3)
       for (size_t f235=f23; f235<bestfac; f235*=5)
-        if (f235>=n) bestfac=f235;
+        for (size_t f2357=f235; f2357<bestfac; f2357*=7)
+          for (size_t f235711=f2357; f235711<bestfac; f235711*=11)
+            if (f235711>=n) bestfac=f235711;
   return bestfac;
   }
 
