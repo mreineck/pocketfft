@@ -280,19 +280,26 @@ typedef struct cfftp_plan_i * cfftp_plan;
 #define MPC(a,b,c,d) { a.r=c.r-d.r; a.i=c.i-d.i; b.r=c.r+d.r; b.i=c.i+d.i; }
 #define ADDC(a,b,c) { a.r=b.r+c.r; a.i=b.i+c.i; }
 #define SCALEC(a,b) { a.r*=b; a.i*=b; }
-#define CONJFLIPC(a) { double tmp_=a.r; a.r=-a.i; a.i=tmp_; }
+#define ROT45(a) { double tmp_=a.r; a.r=hsqt2*(a.r-a.i); a.i=hsqt2*(a.i+tmp_); }
+#define ROTM45(a) { double tmp_=a.r; a.r=hsqt2*(a.r+a.i); a.i=hsqt2*(a.i-tmp_); }
+#define ROT135(a) { double tmp_=a.r; a.r=hsqt2*(-a.r-a.i); a.i=hsqt2*(tmp_-a.i); }
+#define ROTM135(a) { double tmp_=a.r; a.r=hsqt2*(a.i-a.r); a.i=hsqt2*(-tmp_-a.i); }
+#define ROT90(a) { double tmp_=a.r; a.r=-a.i; a.i=tmp_; }
+#define ROTM90(a) { double tmp_=-a.r; a.r=a.i; a.i=tmp_; }
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define WA(x,i) wa[(i)-1+(x)*(ido-1)]
 /* a = b*c */
-#define MULPMC(a,b,c) { a.r=b.r*c.r-b.i*c.i; a.i=b.r*c.i+b.i*c.r; }
-#define MULMPC(a,b,c) { a.r=b.r*c.r+b.i*c.i; a.i=b.r*c.i-b.i*c.r; }
+#define A_EQ_B_MUL_C(a,b,c) { a.r=b.r*c.r-b.i*c.i; a.i=b.r*c.i+b.i*c.r; }
+/* a = conj(b)*c*/
+#define A_EQ_CB_MUL_C(a,b,c) { a.r=b.r*c.r+b.i*c.i; a.i=b.r*c.i-b.i*c.r; }
 
 #define PMSIGNC(a,b,c,d) { a.r=c.r+sign*d.r; a.i=c.i+sign*d.i; b.r=c.r-sign*d.r; b.i=c.i-sign*d.i; }
 /* a = b*c */
 #define MULPMSIGNC(a,b,c) { a.r=b.r*c.r-sign*b.i*c.i; a.i=b.r*c.i+sign*b.i*c.r; }
 /* a *= b */
 #define MULPMSIGNCEQ(a,b) { double xtmp=a.r; a.r=b.r*a.r-sign*b.i*a.i; a.i=b.r*a.i+sign*b.i*xtmp; }
+#define PMINPLACE(a,b) { cmplx t = a; a.r+=b.r; a.i+=b.i; b.r=t.r-b.r; b.i=t.i-b.i; }
 
 NOINLINE static void pass2 (size_t ido, size_t l1, const cmplx * restrict cc,
   cmplx * restrict ch, const cmplx * restrict wa, const int sign)
@@ -380,9 +387,9 @@ NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
         cmplx t1, t2, t3, t4;
         PMC(t2,t1,CC(0,0,k),CC(0,2,k))
         PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-        CONJFLIPC(t4)
+        ROT90(t4)
         PMC(CH(0,k,0),CH(0,k,2),t2,t3)
-        PMC (CH(0,k,1),CH(0,k,3),t1,t4)
+        PMC(CH(0,k,1),CH(0,k,3),t1,t4)
         }
     else
       for (size_t k=0; k<l1; ++k)
@@ -390,9 +397,9 @@ NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
         cmplx t1, t2, t3, t4;
         PMC(t2,t1,CC(0,0,k),CC(0,2,k))
         PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-        CONJFLIPC(t4)
+        ROTM90(t4)
         PMC(CH(0,k,0),CH(0,k,2),t2,t3)
-        MPC (CH(0,k,1),CH(0,k,3),t1,t4)
+        PMC(CH(0,k,1),CH(0,k,3),t1,t4)
         }
   else
     for (size_t k=0; k<l1; ++k)
@@ -401,7 +408,7 @@ NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
       cmplx t1, t2, t3, t4;
       PMC(t2,t1,CC(0,0,k),CC(0,2,k))
       PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-      CONJFLIPC(t4)
+      ROT90(t4)
       PMC(CH(0,k,0),CH(0,k,2),t2,t3)
       PMSIGNC (CH(0,k,1),CH(0,k,3),t1,t4)
       }
@@ -412,13 +419,13 @@ NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
           cmplx cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
           PMC(t2,t1,cc0,cc2)
           PMC(t3,t4,cc1,cc3)
-          CONJFLIPC(t4)
+          ROT90(t4)
           cmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
           PMC(CH(i,k,0),c3,t2,t3)
-          PMC (c2,c4,t1,t4)
-          MULPMC (CH(i,k,1),wa0,c2)
-          MULPMC (CH(i,k,2),wa1,c3)
-          MULPMC (CH(i,k,3),wa2,c4)
+          PMC(c2,c4,t1,t4)
+          A_EQ_B_MUL_C (CH(i,k,1),wa0,c2)
+          A_EQ_B_MUL_C (CH(i,k,2),wa1,c3)
+          A_EQ_B_MUL_C (CH(i,k,3),wa2,c4)
           }
       else
         for (size_t i=1; i<ido; ++i)
@@ -427,17 +434,176 @@ NOINLINE static void pass4 (size_t ido, size_t l1, const cmplx * restrict cc,
           cmplx cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
           PMC(t2,t1,cc0,cc2)
           PMC(t3,t4,cc1,cc3)
-          CONJFLIPC(t4)
+          ROTM90(t4)
           cmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
           PMC(CH(i,k,0),c3,t2,t3)
-          MPC (c2,c4,t1,t4)
-          MULMPC (CH(i,k,1),wa0,c2)
-          MULMPC (CH(i,k,2),wa1,c3)
-          MULMPC (CH(i,k,3),wa2,c4)
+          PMC(c2,c4,t1,t4)
+          A_EQ_CB_MUL_C (CH(i,k,1),wa0,c2)
+          A_EQ_CB_MUL_C (CH(i,k,2),wa1,c3)
+          A_EQ_CB_MUL_C (CH(i,k,3),wa2,c4)
           }
       }
   }
+#if 1
+NOINLINE static void pass8 (size_t ido, size_t l1, const cmplx * restrict cc,
+  cmplx * restrict ch, const cmplx * restrict wa, const int sign)
+  {
+  const size_t cdim=8;
+  static const double hsqt2=0.70710678118654752440;
 
+  if (ido==1)
+    if (sign>0)
+      for (size_t k=0; k<l1; ++k)
+        {
+        cmplx a0, a1, a2, a3, a4, a5, a6, a7;
+        PMC(a0,a4,CC(0,0,k),CC(0,4,k))
+        PMC(a1,a5,CC(0,1,k),CC(0,5,k))
+        PMC(a2,a6,CC(0,2,k),CC(0,6,k))
+        PMC(a3,a7,CC(0,3,k),CC(0,7,k))
+        ROT90(a6);
+        ROT90(a7);
+        PMINPLACE(a0,a2)
+        PMINPLACE(a1,a3)
+        PMINPLACE(a4,a6)
+        PMINPLACE(a5,a7)
+        ROT45(a5);
+        ROT90(a3);
+        ROT135(a7);
+        PMC(CH(0,k,0),CH(0,k,4),a0,a1)
+        PMC(CH(0,k,1),CH(0,k,5),a4,a5)
+        PMC(CH(0,k,2),CH(0,k,6),a2,a3)
+        PMC(CH(0,k,3),CH(0,k,7),a6,a7)
+        }
+    else
+      for (size_t k=0; k<l1; ++k)
+        {
+        cmplx a0, a1, a2, a3, a4, a5, a6, a7;
+        PMC(a0,a4,CC(0,0,k),CC(0,4,k))
+        PMC(a1,a5,CC(0,1,k),CC(0,5,k))
+        PMC(a2,a6,CC(0,2,k),CC(0,6,k))
+        PMC(a3,a7,CC(0,3,k),CC(0,7,k))
+        ROTM90(a6)
+        ROTM90(a7)
+        PMINPLACE(a0,a2)
+        PMINPLACE(a1,a3)
+        PMINPLACE(a4,a6)
+        PMINPLACE(a5,a7)
+        ROTM45(a5)
+        ROTM90(a3)
+        ROTM135(a7)
+        PMC(CH(0,k,0),CH(0,k,4),a0,a1)
+        PMC(CH(0,k,1),CH(0,k,5),a4,a5)
+        PMC(CH(0,k,2),CH(0,k,6),a2,a3)
+        PMC(CH(0,k,3),CH(0,k,7),a6,a7)
+        }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      if (sign>0)
+        {
+        cmplx a0, a1, a2, a3, a4, a5, a6, a7;
+        PMC(a0,a4,CC(0,0,k),CC(0,4,k))
+        PMC(a1,a5,CC(0,1,k),CC(0,5,k))
+        PMC(a2,a6,CC(0,2,k),CC(0,6,k))
+        PMC(a3,a7,CC(0,3,k),CC(0,7,k))
+        ROT90(a6)
+        ROT90(a7)
+        PMINPLACE(a0,a2)
+        PMINPLACE(a1,a3)
+        PMINPLACE(a4,a6)
+        PMINPLACE(a5,a7)
+        ROT45(a5)
+        ROT90(a3)
+        ROT135(a7)
+        PMC(CH(0,k,0),CH(0,k,4),a0,a1)
+        PMC(CH(0,k,1),CH(0,k,5),a4,a5)
+        PMC(CH(0,k,2),CH(0,k,6),a2,a3)
+        PMC(CH(0,k,3),CH(0,k,7),a6,a7)
+        }
+      else
+        {
+        cmplx a0, a1, a2, a3, a4, a5, a6, a7;
+        PMC(a0,a4,CC(0,0,k),CC(0,4,k))
+        PMC(a1,a5,CC(0,1,k),CC(0,5,k))
+        PMC(a2,a6,CC(0,2,k),CC(0,6,k))
+        PMC(a3,a7,CC(0,3,k),CC(0,7,k))
+        ROTM90(a6)
+        ROTM90(a7)
+        PMINPLACE(a0,a2)
+        PMINPLACE(a1,a3)
+        PMINPLACE(a4,a6)
+        PMINPLACE(a5,a7)
+        ROTM45(a5)
+        ROTM90(a3)
+        ROTM135(a7)
+        PMC(CH(0,k,0),CH(0,k,4),a0,a1)
+        PMC(CH(0,k,1),CH(0,k,5),a4,a5)
+        PMC(CH(0,k,2),CH(0,k,6),a2,a3)
+        PMC(CH(0,k,3),CH(0,k,7),a6,a7)
+        }
+      if (sign>0)
+        for (size_t i=1; i<ido; ++i)
+          {
+          cmplx a0, a1, a2, a3, a4, a5, a6, a7;
+          PMC(a0,a4,CC(i,0,k),CC(i,4,k))
+          PMC(a1,a5,CC(i,1,k),CC(i,5,k))
+          PMC(a2,a6,CC(i,2,k),CC(i,6,k))
+          PMC(a3,a7,CC(i,3,k),CC(i,7,k))
+          ROT90(a6)
+          ROT90(a7)
+          PMINPLACE(a0,a2)
+          PMINPLACE(a1,a3)
+          PMINPLACE(a4,a6)
+          PMINPLACE(a5,a7)
+          ROT45(a5)
+          ROT90(a3)
+          ROT135(a7)
+          PMINPLACE(a0,a1)
+          PMINPLACE(a2,a3)
+          PMINPLACE(a4,a5)
+          PMINPLACE(a6,a7)
+          CH(i,k,0) = a0;
+          A_EQ_B_MUL_C(CH(i,k,1),WA(0,i),a4);
+          A_EQ_B_MUL_C(CH(i,k,2),WA(1,i),a2);
+          A_EQ_B_MUL_C(CH(i,k,3),WA(2,i),a6);
+          A_EQ_B_MUL_C(CH(i,k,4),WA(3,i),a1);
+          A_EQ_B_MUL_C(CH(i,k,5),WA(4,i),a5);
+          A_EQ_B_MUL_C(CH(i,k,6),WA(5,i),a3);
+          A_EQ_B_MUL_C(CH(i,k,7),WA(6,i),a7);
+          }
+      else
+        for (size_t i=1; i<ido; ++i)
+          {
+          cmplx a0, a1, a2, a3, a4, a5, a6, a7;
+          PMC(a0,a4,CC(i,0,k),CC(i,4,k))
+          PMC(a1,a5,CC(i,1,k),CC(i,5,k))
+          PMC(a2,a6,CC(i,2,k),CC(i,6,k))
+          PMC(a3,a7,CC(i,3,k),CC(i,7,k))
+          ROTM90(a6)
+          ROTM90(a7)
+          PMINPLACE(a0,a2)
+          PMINPLACE(a1,a3)
+          PMINPLACE(a4,a6)
+          PMINPLACE(a5,a7)
+          ROTM45(a5)
+          ROTM90(a3)
+          ROTM135(a7)
+          PMINPLACE(a0,a1)
+          PMINPLACE(a2,a3)
+          PMINPLACE(a4,a5)
+          PMINPLACE(a6,a7)
+          CH(i,k,0) = a0;
+          A_EQ_CB_MUL_C(CH(i,k,1),WA(0,i),a4);
+          A_EQ_CB_MUL_C(CH(i,k,2),WA(1,i),a2);
+          A_EQ_CB_MUL_C(CH(i,k,3),WA(2,i),a6);
+          A_EQ_CB_MUL_C(CH(i,k,4),WA(3,i),a1);
+          A_EQ_CB_MUL_C(CH(i,k,5),WA(4,i),a5);
+          A_EQ_CB_MUL_C(CH(i,k,6),WA(5,i),a3);
+          A_EQ_CB_MUL_C(CH(i,k,7),WA(6,i),a7);
+          }
+      }
+   }
+#endif
 #define PREP5(idx) \
         cmplx t0 = CC(idx,0,k), t1, t2, t3, t4; \
         PMC (t1,t4,CC(idx,1,k),CC(idx,4,k)) \
@@ -764,7 +930,8 @@ WARN_UNUSED_RESULT static int pass_all(cfftp_plan plan, cmplx c[], double fct,
     size_t ip=plan->fct[k1].fct;
     size_t l2=ip*l1;
     size_t ido = len/l2;
-    if     (ip==4)  pass4 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    if     (ip==8)  pass8 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
+    else if(ip==4)  pass4 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
     else if(ip==2)  pass2 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
     else if(ip==3)  pass3 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
     else if(ip==5)  pass5 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
@@ -802,15 +969,15 @@ WARN_UNUSED_RESULT static int pass_all(cfftp_plan plan, cmplx c[], double fct,
   }
 
 #undef PMSIGNC
-#undef MULPMC
-#undef MULMPC
+#undef A_EQ_B_MUL_C
+#undef A_EQ_CB_MUL_C
 #undef MULPMSIGNC
 #undef MULPMSIGNCEQ
 
 #undef WA
 #undef CC
 #undef CH
-#undef CONJFLIPC
+#undef ROT90
 #undef SCALEC
 #undef ADDC
 #undef MPC
@@ -829,6 +996,8 @@ static int cfftp_factorize (cfftp_plan plan)
   {
   size_t length=plan->length;
   size_t nfct=0;
+  while ((length%8)==0)
+    { if (nfct>=NFCT) return -1; plan->fct[nfct++].fct=8; length>>=3; }
   while ((length%4)==0)
     { if (nfct>=NFCT) return -1; plan->fct[nfct++].fct=4; length>>=2; }
   if ((length%2)==0)

@@ -41,6 +41,7 @@ static int test_real(void)
   const double epsilon=2e-15;
   int ret = 0;
   fill_random (odata, maxlen);
+  double errsum=0;
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,length*sizeof(double));
@@ -52,9 +53,12 @@ static int test_real(void)
     if (err>epsilon)
       {
       printf("problem at real length %i: %e\n",length,err);
+      exit(1);
       ret = 1;
       }
+    errsum+=err;
     }
+  printf("errsum: %e\n",errsum);
   return ret;
   }
 
@@ -64,6 +68,7 @@ static int test_complex(void)
   fill_random (odata, 2*maxlen);
   const double epsilon=2e-15;
   int ret = 0;
+  double errsum=0;
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,2*length*sizeof(double));
@@ -75,14 +80,36 @@ static int test_complex(void)
     if (err>epsilon)
       {
       printf("problem at complex length %i: %e\n",length,err);
+      exit(1);
       ret = 1;
       }
+    errsum+=err;
     }
+  printf("errsum: %e\n",errsum);
   return ret;
+  }
+static void testc1024(void)
+  {
+  double data[2*maxlen], odata[2*maxlen];
+  fill_random (odata, 2*maxlen);
+  const double epsilon=2e-15;
+  int ret = 0;
+  double errsum=0;
+  int length=1024;
+  cfft_plan plan = make_cfft_plan (length);
+  for (int i=0; i<=10000; ++i)
+    {
+    memcpy (data,odata,2*length*sizeof(double));
+    cfft_forward(plan, data, 1.);
+    cfft_backward(plan, data, 1./length);
+    }
+  destroy_cfft_plan (plan);
   }
 
 int main(void)
   {
+  //testc1024();
+  //return 0;
   int ret = 0;
   ret = test_real();
   ret += test_complex();
