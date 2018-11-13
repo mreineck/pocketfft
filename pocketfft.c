@@ -31,15 +31,6 @@
 #define WARN_UNUSED_RESULT
 #endif
 
-#if 0
-static void fracsincos(size_t m, size_t n, double *restrict res)
-  {
-  static const long double twopi=6.283185307179586476925286766559006L;
-  long double arg = twopi*(long double)m/((long double)n);
-  res[0] = (double)cosl(arg); res[1] = (double)sinl(arg);
-  }
-#endif
-
 // adapted from https://stackoverflow.com/questions/42792939/
 // CAUTION: this function only works for arguments in the range [-0.25; 0.25]!
 static void my_sincosm1pi (double a, double *restrict res)
@@ -539,6 +530,7 @@ NOINLINE static void pass4f (size_t ido, size_t l1, const cmplx * restrict cc,
         cb.r=-(twai*t4.i twbi*t3.i); \
         PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) \
         }
+
 #define PARTSTEP5b(u1,u2,twar,twbr,twai,twbi) \
         { \
         cmplx ca,cb,da,db; \
