@@ -7,7 +7,7 @@ test:
   stage: testing
   script:
     - apt-get update
-    - apt-get install -y autoconf automake libtool
+    - apt-get install -y autoconf automake libtool make
     - autoreconf -i
     - CFLAGS="-O3" ./configure --disable-dependency-tracking
     - make distcheck
