@@ -8,5 +8,6 @@ test:
   script:
     - apt-get update
     - apt-get install -y gcc
-    - gcc -O3 -W -Wall -std=c99 -march=native *.c -lm
-    - ./a.out
+    - autoreconf -i
+    - CFLAGS="-O3" ./configure
+    - make distcheck
