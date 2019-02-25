@@ -9,5 +9,5 @@ test:
     - apt-get update
     - apt-get install -y autoconf automake libtool
     - autoreconf -i
-    - CFLAGS="-O3" ./configure
-    - MAKE=gmake gmake distcheck
+    - CFLAGS="-O3" ./configure --disable-dependency-tracking
+    - make distcheck
