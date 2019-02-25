@@ -1,14 +1,14 @@
 PocketFFT
 ---------
 
-This is a heavily modified implementation of FFTPack [1,2], with the following
-advantages:
+This is a heavily modified implementation of FFTPack [^1,^2], with the
+following advantages:
 
 - strictly C99 compliant
 - more accurate twiddle factor computation
 - very fast plan generation
 - worst case complexity for transform sizes with large prime factors is
-  `N*log(N)`, because Bluestein's algorithm [3] is used for these cases.
+  `N*log(N)`, because Bluestein's algorithm [^3] is used for these cases.
 
 License
 -------
@@ -47,7 +47,9 @@ instead of an FFT of length `n`, a convolution of length `n2 >= 2*n-1`
 is performed, where `n2` is chosen to be highly composite.
 
 
-[1] Swarztrauber, P. 1982, Vectorizing the Fast Fourier Transforms
-    (New York: Academic Press), 51
-[2] https://www.netlib.org/fftpack/
-[3] https://en.wikipedia.org/wiki/Chirp_Z-transform
+[^1] Swarztrauber, P. 1982, Vectorizing the Fast Fourier Transforms
+     (New York: Academic Press), 51
+
+[^2] https://www.netlib.org/fftpack/
+
+[^3] https://en.wikipedia.org/wiki/Chirp_Z-transform
