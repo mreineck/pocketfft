@@ -10,4 +10,4 @@ test:
     - apt-get install -y autoconf automake libtool
     - autoreconf -i
     - CFLAGS="-O3" ./configure
-    - make distcheck
+    - MAKE=gmake gmake distcheck
