@@ -2,9 +2,9 @@ ACLOCAL_AMFLAGS = -I m4
 
 lib_LTLIBRARIES = libpocketfft.la
 
-libpocketfft_la_SOURCES = pocketfft.c pocketfft.h
+libpocketfft_la_SOURCES = pocketfft/pocketfft.c pocketfft/pocketfft.h
 
-include_HEADERS = pocketfft.h
+nobase_include_HEADERS = pocketfft/pocketfft.h
 
 EXTRA_DIST = README.md LICENSE.md runtest.sh
 
@@ -13,8 +13,6 @@ ffttest_SOURCES = ffttest.c
 ffttest_LDADD = libpocketfft.la
 
 TESTS = runtest.sh
-
-AM_CFLAGS = @AM_CFLAGS@
 
 pkgconfigdir = $(libdir)/pkgconfig
 nodist_pkgconfig_DATA = @PACKAGE_NAME@.pc

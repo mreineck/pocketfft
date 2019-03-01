@@ -6,14 +6,14 @@
 /*
  *  Main implementation file.
  *
- *  Copyright (C) 2004-2018 Max-Planck-Society
+ *  Copyright (C) 2004-2019 Max-Planck-Society
  *  \author Martin Reinecke
  */
 
 #include <math.h>
 #include <string.h>
 
-#include "pocketfft.h"
+#include "pocketfft/pocketfft.h"
 
 #define RALLOC(type,num) \
   ((type *)malloc((num)*sizeof(type)))
@@ -2057,16 +2057,16 @@ static int rfftblue_forward(fftblue_plan plan, double c[], double fct)
   return 0;
   }
 
-typedef struct cfft_plan_i
+typedef struct pocketfft_plan_c_i
   {
   cfftp_plan packplan;
   fftblue_plan blueplan;
-  } cfft_plan_i;
+  } pocketfft_plan_c_i;
 
-cfft_plan make_cfft_plan (size_t length)
+pocketfft_plan_c pocketfft_make_plan_c (size_t length)
   {
   if (length==0) return NULL;
-  cfft_plan plan = RALLOC(cfft_plan_i,1);
+  pocketfft_plan_c plan = RALLOC(pocketfft_plan_c_i,1);
   if (!plan) return NULL;
   plan->blueplan=0;
   plan->packplan=0;
@@ -2092,7 +2092,7 @@ cfft_plan make_cfft_plan (size_t length)
   return plan;
   }
 
-void destroy_cfft_plan (cfft_plan plan)
+void pocketfft_delete_plan_c (pocketfft_plan_c plan)
   {
   if (plan->blueplan)
     destroy_fftblue_plan(plan->blueplan);
@@ -2101,7 +2101,8 @@ void destroy_cfft_plan (cfft_plan plan)
   DEALLOC(plan);
   }
 
-WARN_UNUSED_RESULT int cfft_backward(cfft_plan plan, double c[], double fct)
+WARN_UNUSED_RESULT
+int pocketfft_backward_c(pocketfft_plan_c plan, double c[], double fct)
   {
   if (plan->packplan)
     return cfftp_backward(plan->packplan,c,fct);
@@ -2109,7 +2110,8 @@ WARN_UNUSED_RESULT int cfft_backward(cfft_plan plan, double c[], double fct)
   return cfftblue_backward(plan->blueplan,c,fct);
   }
 
-WARN_UNUSED_RESULT int cfft_forward(cfft_plan plan, double c[], double fct)
+WARN_UNUSED_RESULT
+int pocketfft_forward_c(pocketfft_plan_c plan, double c[], double fct)
   {
   if (plan->packplan)
     return cfftp_forward(plan->packplan,c,fct);
@@ -2117,16 +2119,16 @@ WARN_UNUSED_RESULT int cfft_forward(cfft_plan plan, double c[], double fct)
   return cfftblue_forward(plan->blueplan,c,fct);
   }
 
-typedef struct rfft_plan_i
+typedef struct pocketfft_plan_r_i
   {
   rfftp_plan packplan;
   fftblue_plan blueplan;
-  } rfft_plan_i;
+  } pocketfft_plan_r_i;
 
-rfft_plan make_rfft_plan (size_t length)
+pocketfft_plan_r pocketfft_make_plan_r (size_t length)
   {
   if (length==0) return NULL;
-  rfft_plan plan = RALLOC(rfft_plan_i,1);
+  pocketfft_plan_r plan = RALLOC(pocketfft_plan_r_i,1);
   if (!plan) return NULL;
   plan->blueplan=0;
   plan->packplan=0;
@@ -2152,7 +2154,7 @@ rfft_plan make_rfft_plan (size_t length)
   return plan;
   }
 
-void destroy_rfft_plan (rfft_plan plan)
+void pocketfft_delete_plan_r (pocketfft_plan_r plan)
   {
   if (plan->blueplan)
     destroy_fftblue_plan(plan->blueplan);
@@ -2161,19 +2163,20 @@ void destroy_rfft_plan (rfft_plan plan)
   DEALLOC(plan);
   }
 
-size_t rfft_length(rfft_plan plan)
+size_t pocketfft_length_r(pocketfft_plan_r plan)
   {
   if (plan->packplan) return plan->packplan->length;
   return plan->blueplan->n;
   }
 
-size_t cfft_length(cfft_plan plan)
+size_t pocketfft_length_c(pocketfft_plan_c plan)
   {
   if (plan->packplan) return plan->packplan->length;
   return plan->blueplan->n;
   }
 
-WARN_UNUSED_RESULT int rfft_backward(rfft_plan plan, double c[], double fct)
+WARN_UNUSED_RESULT
+int pocketfft_backward_r(pocketfft_plan_r plan, double c[], double fct)
   {
   if (plan->packplan)
     return rfftp_backward(plan->packplan,c,fct);
@@ -2181,7 +2184,8 @@ WARN_UNUSED_RESULT int rfft_backward(rfft_plan plan, double c[], double fct)
     return rfftblue_backward(plan->blueplan,c,fct);
   }
 
-WARN_UNUSED_RESULT int rfft_forward(rfft_plan plan, double c[], double fct)
+WARN_UNUSED_RESULT
+int pocketfft_forward_r(pocketfft_plan_r plan, double c[], double fct)
   {
   if (plan->packplan)
     return rfftp_forward(plan->packplan,c,fct);

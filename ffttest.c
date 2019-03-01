@@ -6,7 +6,7 @@
 /*
  *  Test codes for pocketfft.
  *
- *  Copyright (C) 2004-2018 Max-Planck-Society
+ *  Copyright (C) 2004-2019 Max-Planck-Society
  *  \author Martin Reinecke
  */
 
@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
-#include "pocketfft.h"
+#include "pocketfft/pocketfft.h"
 
 #define maxlen 8192
 
@@ -45,10 +45,10 @@ static int test_real(void)
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,length*sizeof(double));
-    rfft_plan plan = make_rfft_plan (length);
-    rfft_forward (plan, data, 1.);
-    rfft_backward (plan, data, 1./length);
-    destroy_rfft_plan (plan);
+    pocketfft_plan_r plan = pocketfft_make_plan_r (length);
+    pocketfft_forward_r (plan, data, 1.);
+    pocketfft_backward_r (plan, data, 1./length);
+    pocketfft_delete_plan_r (plan);
     double err = errcalc (data, odata, length);
     if (err>epsilon)
       {
@@ -71,10 +71,10 @@ static int test_complex(void)
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,2*length*sizeof(double));
-    cfft_plan plan = make_cfft_plan (length);
-    cfft_forward(plan, data, 1.);
-    cfft_backward(plan, data, 1./length);
-    destroy_cfft_plan (plan);
+    pocketfft_plan_c plan = pocketfft_make_plan_c (length);
+    pocketfft_forward_c(plan, data, 1.);
+    pocketfft_backward_c(plan, data, 1./length);
+    pocketfft_delete_plan_c (plan);
     double err = errcalc (data, odata, 2*length);
     if (err>epsilon)
       {
