@@ -46,6 +46,20 @@ For lengths with very large prime factors, Bluestein's algorithm is used, and
 instead of an FFT of length `n`, a convolution of length `n2 >= 2*n-1`
 is performed, where `n2` is chosen to be highly composite.
 
+Harmonic data format of real-valued transforms:
+
+To store the harmonic counterpart of real-valued data, pocketfft uses the same
+half-complex format as FFTPACK, i.e. instead of storing
+
+re_0, im_0, re_1, im_1, re_2, im_2, ..., re_n, im_n (2*n values in total)
+
+it stores
+
+re_0, re_1, im_1, re_2, im_2, ... (n values in total).
+
+This format contains the full information and has exactly the same size as
+the input array.
+
 
 [1] Swarztrauber, P. 1982, Vectorizing the Fast Fourier Transforms
     (New York: Academic Press), 51
