@@ -31,7 +31,15 @@ struct pocketfft_plan_r_i;
 typedef struct pocketfft_plan_r_i * pocketfft_plan_r;
 pocketfft_plan_r pocketfft_make_plan_r (size_t length);
 void pocketfft_delete_plan_r (pocketfft_plan_r plan);
+/*! Computes a real backward FFT on \a c, using \a plan
+    and assuming the FFTPACK storage scheme:
+    - on entry, \a c has the form <tt>r0, r1, i1, r2, i2, ...</tt>
+    - on exit, it has the form <tt>r0, r1, ..., r[length-1]</tt>. */
 int pocketfft_backward_r(pocketfft_plan_r plan, double c[], double fct);
+/*! Computes a real forward FFT on \a c, using \a plan
+    and assuming the FFTPACK storage scheme:
+    - on entry, \a c has the form <tt>r0, r1, ..., r[length-1]</tt>;
+    - on exit, it has the form <tt>r0, r1, i1, r2, i2, ...</tt> */
 int pocketfft_forward_r(pocketfft_plan_r plan, double c[], double fct);
 size_t pocketfft_length_r(pocketfft_plan_r plan);
 
