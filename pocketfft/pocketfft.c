@@ -2192,3 +2192,208 @@ int pocketfft_forward_r(pocketfft_plan_r plan, double c[], double fct)
   else // if (plan->blueplan)
     return rfftblue_forward(plan->blueplan,c,fct);
   }
+
+#include <complex.h>
+#define maxdim 10
+
+typedef struct arr
+  {
+  uint64_t n[maxdim], s[maxdim], nd;
+  } arr;
+
+static void arr_init(arr *self, uint64_t nd, const uint64_t *n,
+  const uint64_t *s)
+  {
+  self->nd = nd;
+  for (uint64_t i=0; i<nd; ++i)
+    {
+    self->n[i] = n[i];
+    self->s[i] = s[i];
+    }
+  }
+
+typedef struct multi_iter
+  {
+  uint64_t n[maxdim], s[maxdim], pos[maxdim], nd, ofs, len, stride;
+  int done;
+  } multi_iter;
+
+static void multi_iter_init (multi_iter *self, const arr *a, uint64_t dim)
+  {
+  self->nd = a->nd-1;
+  uint64_t niter=1;
+  for (uint64_t i=0, iself=0; i<a->nd; ++i)
+    {
+    if (i!=dim)
+      {
+      self->pos[iself] = 0;
+      self->n[iself] = a->n[i];
+      self->s[iself] = a->s[i];
+      niter *= a->n[i];
+      ++iself;
+      }
+    }
+  self->ofs = 0;
+  self->len = a->n[dim];
+  self->stride = a->s[dim];
+  self->done = niter==0;
+  }
+
+static void multi_iter_advance(multi_iter *self)
+  {
+  for (int i=self->nd-1; i>=0; --i)
+    {
+    ++self->pos[i];
+    self->ofs += self->s[i];
+    if (self->pos[i] < self->n[i])
+      return;
+    self->pos[i] = 0;
+    self->ofs -= self->n[i]*self->s[i];
+    }
+  self->done = 1;
+  }
+
+static void pocketfft_general_c(int ndim, const uint64_t *shape,
+  const uint64_t *stride_in, const uint64_t *stride_out, int nax,
+  const uint64_t *axes, int forward, int dp, const void *data_in,
+  void *data_out, double fct)
+  {
+  // allocate temporary 1D array storage, if necessary
+  uint64_t tmpsize = 0;
+  for (int iax=0; iax<nax; ++iax)
+    {
+    int inplace = 0;
+    if (dp)
+      {
+      int stride = (iax==0) ? stride_in[axes[iax]] : stride_out[axes[iax]];
+      if (stride==1)
+        if ((iax>0) || (data_in==data_out))
+          inplace = 1;
+      }
+    if (!inplace)
+      if (shape[axes[iax]] > tmpsize) tmpsize = shape[axes[iax]];
+    }
+  complex double *tdata = RALLOC(complex double, tmpsize);
+
+  arr a_in, a_out;
+  arr_init(&a_in, ndim, shape, stride_in);
+  arr_init(&a_out, ndim, shape, stride_out);
+  pocketfft_plan_c plan = NULL;
+
+  for (int iax=0; iax<nax; ++iax)
+    {
+    int axis = axes[iax];
+    multi_iter it_in, it_out;
+    multi_iter_init(&it_in, &a_in, axis);
+    int inplace = (data_in==data_out) && dp && (it_in.stride==1);
+    //if (!inplace)
+      multi_iter_init(&it_out, &a_out, axis);
+    if ((!plan) || (it_in.len!=pocketfft_length_c(plan)))
+      {
+      if (plan) pocketfft_delete_plan_c(plan);
+      plan = pocketfft_make_plan_c(it_in.len);
+      }
+    while (!it_in.done)
+      {
+      if (inplace)
+        {
+        double *d = ((double *)data_in)+it_in.ofs;
+        forward ? pocketfft_forward_c(plan, d, fct)
+                : pocketfft_backward_c(plan, d, fct);
+        }
+      else
+        {
+        if (dp)
+          for (uint64_t i=0; i<it_in.len; ++i)
+            tdata[i] = ((complex double *)data_in)[it_in.ofs+i*it_in.stride];
+        else
+          for (uint64_t i=0; i<it_in.len; ++i)
+            tdata[i] = ((complex float *)data_in)[it_in.ofs+i*it_in.stride];
+        forward ? pocketfft_forward_c(plan, (double *)tdata, fct)
+                : pocketfft_backward_c(plan, (double *)tdata, fct);
+        if (dp)
+          for (uint64_t i=0; i<it_out.len; ++i)
+            ((complex double *)data_out)[it_out.ofs+i*it_out.stride] = tdata[i];
+        else
+          for (uint64_t i=0; i<it_out.len; ++i)
+            ((complex float *)data_out)[it_out.ofs+i*it_out.stride] = tdata[i];
+        }
+      multi_iter_advance(&it_in);
+      if (!inplace)
+        multi_iter_advance(&it_out);
+      }
+    // after the first dimension, take data from output array
+    a_in = a_out;
+    data_in = data_out;
+    // factor has been applied, use 1 for remaining axes
+    fct = 1.;
+    }
+  if (plan) pocketfft_delete_plan_c(plan);
+
+  DEALLOC(tdata);
+  }
+
+void pocketfft_c_sng_1D_fwd_inplace(uint64_t n, float *data)
+  {
+  uint64_t stride=1, ax=0;
+  pocketfft_general_c(1, &n, &stride, &stride, 1, &ax, 1, 0, data, data, 1.);
+  }
+void pocketfft_c_sng_1D_bwd_inplace(uint64_t n, float *data)
+  {
+  uint64_t stride=1, ax=0;
+  pocketfft_general_c(1, &n, &stride, &stride, 1, &ax, 0, 0, data, data, 1.);
+  }
+void pocketfft_c_dbl_1D_fwd_inplace(uint64_t n, double *data)
+  {
+  uint64_t stride=1, ax=0;
+  pocketfft_general_c(1, &n, &stride, &stride, 1, &ax, 1, 1, data, data, 1.);
+  }
+void pocketfft_c_dbl_1D_bwd_inplace(uint64_t n, double *data)
+  {
+  uint64_t stride=1, ax=0;
+  pocketfft_general_c(1, &n, &stride, &stride, 1, &ax, 0, 1, data, data, 1.);
+  }
+void pocketfft_c_sng_2D_fwd_inplace(uint64_t n1, uint64_t n2, float *data)
+  {
+  uint64_t n[]={n1,n2}, stride[]={n2,1}, ax[]={0,1};
+  pocketfft_general_c(2, n, stride, stride, 2, ax, 1, 0, data, data, 1.);
+  }
+void pocketfft_c_sng_2D_bwd_inplace(uint64_t n1, uint64_t n2, float *data)
+  {
+  uint64_t n[]={n1,n2}, stride[]={n2,1}, ax[]={0,1};
+  pocketfft_general_c(2, n, stride, stride, 2, ax, 0, 0, data, data, 1.);
+  }
+void pocketfft_c_dbl_2D_fwd_inplace(uint64_t n1, uint64_t n2, double *data)
+  {
+  uint64_t n[]={n1,n2}, stride[]={n2,1}, ax[]={0,1};
+  pocketfft_general_c(2, n, stride, stride, 2, ax, 1, 1, data, data, 1.);
+  }
+void pocketfft_c_dbl_2D_bwd_inplace(uint64_t n1, uint64_t n2, double *data)
+  {
+  uint64_t n[]={n1,n2}, stride[]={n2,1}, ax[]={0,1};
+  pocketfft_general_c(2, n, stride, stride, 2, ax, 0, 1, data, data, 1.);
+  }
+void pocketfft_c_sng_3D_fwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  float *data)
+  {
+  uint64_t n[]={n1,n2,n3}, stride[]={n2*n3,n3,1}, ax[]={0,1,2};
+  pocketfft_general_c(3, n, stride, stride, 3, ax, 1, 0, data, data, 1.);
+  }
+void pocketfft_c_sng_3D_bwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  float *data)
+  {
+  uint64_t n[]={n1,n2,n3}, stride[]={n2*n3,n3,1}, ax[]={0,1,2};
+  pocketfft_general_c(3, n, stride, stride, 3, ax, 0, 0, data, data, 1.);
+  }
+void pocketfft_c_dbl_3D_fwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  double *data)
+  {
+  uint64_t n[]={n1,n2,n3}, stride[]={n2*n3,n3,1}, ax[]={0,1,2};
+  pocketfft_general_c(3, n, stride, stride, 3, ax, 1, 1, data, data, 1.);
+  }
+void pocketfft_c_dbl_3D_bwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  double *data)
+  {
+  uint64_t n[]={n1,n2,n3}, stride[]={n2*n3,n3,1}, ax[]={0,1,2};
+  pocketfft_general_c(3, n, stride, stride, 3, ax, 0, 1, data, data, 1.);
+  }

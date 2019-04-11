@@ -14,6 +14,7 @@
 #define POCKETFFT_H
 
 #include <stdlib.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +43,24 @@ int pocketfft_backward_r(pocketfft_plan_r plan, double c[], double fct);
     - on exit, it has the form <tt>r0, r1, i1, r2, i2, ...</tt> */
 int pocketfft_forward_r(pocketfft_plan_r plan, double c[], double fct);
 size_t pocketfft_length_r(pocketfft_plan_r plan);
+
+/* Experimental high-level interface */
+void pocketfft_c_sng_1D_fwd_inplace(uint64_t n, float *data);
+void pocketfft_c_sng_1D_bwd_inplace(uint64_t n, float *data);
+void pocketfft_c_dbl_1D_fwd_inplace(uint64_t n, double *data);
+void pocketfft_c_dbl_1D_bwd_inplace(uint64_t n, double *data);
+void pocketfft_c_sng_2D_fwd_inplace(uint64_t n1, uint64_t n2, float *data);
+void pocketfft_c_sng_2D_bwd_inplace(uint64_t n1, uint64_t n2, float *data);
+void pocketfft_c_dbl_2D_fwd_inplace(uint64_t n1, uint64_t n2, double *data);
+void pocketfft_c_dbl_2D_bwd_inplace(uint64_t n1, uint64_t n2, double *data);
+void pocketfft_c_sng_3D_fwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  float *data);
+void pocketfft_c_sng_3D_bwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  float *data);
+void pocketfft_c_dbl_3D_fwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  double *data);
+void pocketfft_c_dbl_3D_bwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
+  double *data);
 
 #ifdef __cplusplus
 }
