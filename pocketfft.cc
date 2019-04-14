@@ -2,6 +2,7 @@
 #include <cstring>
 #include <algorithm>
 #include <iostream>
+#include <memory>
 
 #ifdef __GNUC__
 #define NOINLINE __attribute__((noinline))
@@ -21,176 +22,216 @@ using namespace std;
 
 namespace {
 
-// adapted from https://stackoverflow.com/questions/42792939/
-// CAUTION: this function only works for arguments in the range [-0.25; 0.25]!
-void my_sincosm1pi (double a, double *restrict res)
-  {
-  double s = a * a;
-  /* Approximate cos(pi*x)-1 for x in [-0.25,0.25] */
-  double r =     -1.0369917389758117e-4;
-  r = fma (r, s,  1.9294935641298806e-3);
-  r = fma (r, s, -2.5806887942825395e-2);
-  r = fma (r, s,  2.3533063028328211e-1);
-  r = fma (r, s, -1.3352627688538006e+0);
-  r = fma (r, s,  4.0587121264167623e+0);
-  r = fma (r, s, -4.9348022005446790e+0);
-  double c = r*s;
-  /* Approximate sin(pi*x) for x in [-0.25,0.25] */
-  r =             4.6151442520157035e-4;
-  r = fma (r, s, -7.3700183130883555e-3);
-  r = fma (r, s,  8.2145868949323936e-2);
-  r = fma (r, s, -5.9926452893214921e-1);
-  r = fma (r, s,  2.5501640398732688e+0);
-  r = fma (r, s, -5.1677127800499516e+0);
-  s = s * a;
-  r = r * s;
-  s = fma (a, 3.1415926535897931e+0, r);
-  res[0] = c;
-  res[1] = s;
-  }
+class OOM {};
 
-NOINLINE void calc_first_octant(size_t den, double * restrict res)
+template<typename T> struct arr
   {
-  size_t n = (den+4)>>3;
-  if (n==0) return;
-  res[0]=1.; res[1]=0.;
-  if (n==1) return;
-  size_t l1=(size_t)sqrt(n);
-  for (size_t i=1; i<l1; ++i)
-    my_sincosm1pi((2.*i)/den,&res[2*i]);
-  size_t start=l1;
-  while(start<n)
-    {
-    double cs[2];
-    my_sincosm1pi((2.*start)/den,cs);
-    res[2*start] = cs[0]+1.;
-    res[2*start+1] = cs[1];
-    size_t end = l1;
-    if (start+end>n) end = n-start;
-    for (size_t i=1; i<end; ++i)
+  private:
+    T *p;
+    size_t sz;
+
+  public:
+    arr() : p(0), sz(0) {}
+    arr(size_t n) : p(RALLOC(T, n)), sz(n) {}
+    ~arr() { DEALLOC(p); }
+
+    void resize(size_t n)
       {
-      double csx[2]={res[2*i], res[2*i+1]};
-      res[2*(start+i)] = ((cs[0]*csx[0] - cs[1]*csx[1] + cs[0]) + csx[0]) + 1.;
-      res[2*(start+i)+1] = (cs[0]*csx[1] + cs[1]*csx[0]) + cs[1] + csx[1];
+      if (n==sz) return;
+      DEALLOC(p);
+      p = RALLOC(T, n);
+      sz = n;
       }
-    start += l1;
-    }
-  for (size_t i=1; i<l1; ++i)
-    res[2*i] += 1.;
-  }
 
-NOINLINE void calc_first_quadrant(size_t n, double * restrict res)
-  {
-  double * restrict p = res+n;
-  calc_first_octant(n<<1, p);
-  size_t ndone=(n+2)>>2;
-  size_t i=0, idx1=0, idx2=2*ndone-2;
-  for (; i+1<ndone; i+=2, idx1+=2, idx2-=2)
-    {
-    res[idx1]   = p[2*i];
-    res[idx1+1] = p[2*i+1];
-    res[idx2]   = p[2*i+3];
-    res[idx2+1] = p[2*i+2];
-    }
-  if (i!=ndone)
-    {
-    res[idx1  ] = p[2*i];
-    res[idx1+1] = p[2*i+1];
-    }
-  }
+    T &operator[](size_t idx) { return p[idx]; }
+    const T &operator[](size_t idx) const { return p[idx]; }
 
-NOINLINE void calc_first_half(size_t n, double * restrict res)
-  {
-  int ndone=(n+1)>>1;
-  double * p = res+n-1;
-  calc_first_octant(n<<2, p);
-  int i4=0, in=n, i=0;
-  for (; i4<=in-i4; ++i, i4+=4) // octant 0
-    {
-    res[2*i] = p[2*i4]; res[2*i+1] = p[2*i4+1];
-    }
-  for (; i4-in <= 0; ++i, i4+=4) // octant 1
-    {
-    int xm = in-i4;
-    res[2*i] = p[2*xm+1]; res[2*i+1] = p[2*xm];
-    }
-  for (; i4<=3*in-i4; ++i, i4+=4) // octant 2
-    {
-    int xm = i4-in;
-    res[2*i] = -p[2*xm+1]; res[2*i+1] = p[2*xm];
-    }
-  for (; i<ndone; ++i, i4+=4) // octant 3
-    {
-    int xm = 2*in-i4;
-    res[2*i] = -p[2*xm]; res[2*i+1] = p[2*xm+1];
-    }
-  }
+    T *data() { return p; }
+    const T *data() const { return p; }
 
-NOINLINE void fill_first_quadrant(size_t n, double * restrict res)
-  {
-  const double hsqt2 = 0.707106781186547524400844362104849;
-  size_t quart = n>>2;
-  if ((n&7)==0)
-    res[quart] = res[quart+1] = hsqt2;
-  for (size_t i=2, j=2*quart-2; i<quart; i+=2, j-=2)
-    {
-    res[j  ] = res[i+1];
-    res[j+1] = res[i  ];
-    }
-  }
+    size_t size() const { return sz; }
+  };
 
-NOINLINE void fill_first_half(size_t n, double * restrict res)
+class sincos_2pibyn
   {
-  size_t half = n>>1;
-  if ((n&3)==0)
-    for (size_t i=0; i<half; i+=2)
+  private:
+    arr<double> data;
+
+    // adapted from https://stackoverflow.com/questions/42792939/
+    // CAUTION: this function only works for arguments in the range [-0.25; 0.25]!
+    void my_sincosm1pi (double a, double *restrict res)
       {
-      res[i+half]   = -res[i+1];
-      res[i+half+1] =  res[i  ];
+      double s = a * a;
+      /* Approximate cos(pi*x)-1 for x in [-0.25,0.25] */
+      double r =     -1.0369917389758117e-4;
+      r = fma (r, s,  1.9294935641298806e-3);
+      r = fma (r, s, -2.5806887942825395e-2);
+      r = fma (r, s,  2.3533063028328211e-1);
+      r = fma (r, s, -1.3352627688538006e+0);
+      r = fma (r, s,  4.0587121264167623e+0);
+      r = fma (r, s, -4.9348022005446790e+0);
+      double c = r*s;
+      /* Approximate sin(pi*x) for x in [-0.25,0.25] */
+      r =             4.6151442520157035e-4;
+      r = fma (r, s, -7.3700183130883555e-3);
+      r = fma (r, s,  8.2145868949323936e-2);
+      r = fma (r, s, -5.9926452893214921e-1);
+      r = fma (r, s,  2.5501640398732688e+0);
+      r = fma (r, s, -5.1677127800499516e+0);
+      s = s * a;
+      r = r * s;
+      s = fma (a, 3.1415926535897931e+0, r);
+      res[0] = c;
+      res[1] = s;
       }
-  else
-    for (size_t i=2, j=2*half-2; i<half; i+=2, j-=2)
+
+    NOINLINE void calc_first_octant(size_t den, double * restrict res)
       {
-      res[j  ] = -res[i  ];
-      res[j+1] =  res[i+1];
+      size_t n = (den+4)>>3;
+      if (n==0) return;
+      res[0]=1.; res[1]=0.;
+      if (n==1) return;
+      size_t l1=(size_t)sqrt(n);
+      for (size_t i=1; i<l1; ++i)
+        my_sincosm1pi((2.*i)/den,&res[2*i]);
+      size_t start=l1;
+      while(start<n)
+        {
+        double cs[2];
+        my_sincosm1pi((2.*start)/den,cs);
+        res[2*start] = cs[0]+1.;
+        res[2*start+1] = cs[1];
+        size_t end = l1;
+        if (start+end>n) end = n-start;
+        for (size_t i=1; i<end; ++i)
+          {
+          double csx[2]={res[2*i], res[2*i+1]};
+          res[2*(start+i)] = ((cs[0]*csx[0] - cs[1]*csx[1] + cs[0]) + csx[0]) + 1.;
+          res[2*(start+i)+1] = (cs[0]*csx[1] + cs[1]*csx[0]) + cs[1] + csx[1];
+          }
+        start += l1;
+        }
+      for (size_t i=1; i<l1; ++i)
+        res[2*i] += 1.;
       }
-  }
 
-NOINLINE void fill_second_half(size_t n, double * restrict res)
-  {
-  if ((n&1)==0)
-    for (size_t i=0; i<n; ++i)
-      res[i+n] = -res[i];
-  else
-    for (size_t i=2, j=2*n-2; i<n; i+=2, j-=2)
+    NOINLINE void calc_first_quadrant(size_t n, double * restrict res)
       {
-      res[j  ] =  res[i  ];
-      res[j+1] = -res[i+1];
+      double * restrict p = res+n;
+      calc_first_octant(n<<1, p);
+      size_t ndone=(n+2)>>2;
+      size_t i=0, idx1=0, idx2=2*ndone-2;
+      for (; i+1<ndone; i+=2, idx1+=2, idx2-=2)
+        {
+        res[idx1]   = p[2*i];
+        res[idx1+1] = p[2*i+1];
+        res[idx2]   = p[2*i+3];
+        res[idx2+1] = p[2*i+2];
+        }
+      if (i!=ndone)
+        {
+        res[idx1  ] = p[2*i];
+        res[idx1+1] = p[2*i+1];
+        }
       }
-  }
 
-NOINLINE void sincos_2pibyn_half(size_t n, double * restrict res)
-  {
-  if ((n&3)==0)
-    {
-    calc_first_octant(n, res);
-    fill_first_quadrant(n, res);
-    fill_first_half(n, res);
-    }
-  else if ((n&1)==0)
-    {
-    calc_first_quadrant(n, res);
-    fill_first_half(n, res);
-    }
-  else
-    calc_first_half(n, res);
-  }
+    NOINLINE void calc_first_half(size_t n, double * restrict res)
+      {
+      int ndone=(n+1)>>1;
+      double * p = res+n-1;
+      calc_first_octant(n<<2, p);
+      int i4=0, in=n, i=0;
+      for (; i4<=in-i4; ++i, i4+=4) // octant 0
+        {
+        res[2*i] = p[2*i4]; res[2*i+1] = p[2*i4+1];
+        }
+      for (; i4-in <= 0; ++i, i4+=4) // octant 1
+        {
+        int xm = in-i4;
+        res[2*i] = p[2*xm+1]; res[2*i+1] = p[2*xm];
+        }
+      for (; i4<=3*in-i4; ++i, i4+=4) // octant 2
+        {
+        int xm = i4-in;
+        res[2*i] = -p[2*xm+1]; res[2*i+1] = p[2*xm];
+        }
+      for (; i<ndone; ++i, i4+=4) // octant 3
+        {
+        int xm = 2*in-i4;
+        res[2*i] = -p[2*xm]; res[2*i+1] = p[2*xm+1];
+        }
+      }
 
-NOINLINE void sincos_2pibyn(size_t n, double * restrict res)
-  {
-  sincos_2pibyn_half(n, res);
-  fill_second_half(n, res);
-  }
+    NOINLINE void fill_first_quadrant(size_t n, double * restrict res)
+      {
+      const double hsqt2 = 0.707106781186547524400844362104849;
+      size_t quart = n>>2;
+      if ((n&7)==0)
+        res[quart] = res[quart+1] = hsqt2;
+      for (size_t i=2, j=2*quart-2; i<quart; i+=2, j-=2)
+        {
+        res[j  ] = res[i+1];
+        res[j+1] = res[i  ];
+        }
+      }
+
+    NOINLINE void fill_first_half(size_t n, double * restrict res)
+      {
+      size_t half = n>>1;
+      if ((n&3)==0)
+        for (size_t i=0; i<half; i+=2)
+          {
+          res[i+half]   = -res[i+1];
+          res[i+half+1] =  res[i  ];
+          }
+      else
+        for (size_t i=2, j=2*half-2; i<half; i+=2, j-=2)
+          {
+          res[j  ] = -res[i  ];
+          res[j+1] =  res[i+1];
+          }
+      }
+
+    NOINLINE void fill_second_half(size_t n, double * restrict res)
+      {
+      if ((n&1)==0)
+        for (size_t i=0; i<n; ++i)
+          res[i+n] = -res[i];
+      else
+        for (size_t i=2, j=2*n-2; i<n; i+=2, j-=2)
+          {
+          res[j  ] =  res[i  ];
+          res[j+1] = -res[i+1];
+          }
+      }
+
+    NOINLINE void sincos_2pibyn_half(size_t n, double * restrict res)
+      {
+      if ((n&3)==0)
+        {
+        calc_first_octant(n, res);
+        fill_first_quadrant(n, res);
+        fill_first_half(n, res);
+        }
+      else if ((n&1)==0)
+        {
+        calc_first_quadrant(n, res);
+        fill_first_half(n, res);
+        }
+      else
+        calc_first_half(n, res);
+      }
+
+  public:
+    sincos_2pibyn(size_t n)
+      : data(2*n)
+      {
+      sincos_2pibyn_half(n, data.data());
+      fill_second_half(n, data.data());
+      }
+
+    double operator[](size_t idx) const { return data[idx]; }
+  };
 
 NOINLINE size_t largest_prime_factor (size_t n)
   {
@@ -235,7 +276,7 @@ NOINLINE double cost_guess (size_t n)
   }
 
 /* returns the smallest composite of 2, 3, 5, 7 and 11 which is >= n */
-NOINLINE static size_t good_size(size_t n)
+NOINLINE size_t good_size(size_t n)
   {
   if (n<=6) return n;
 
@@ -251,12 +292,6 @@ NOINLINE static size_t good_size(size_t n)
 
 template<typename T> struct cmplx {
   T r, i;
-
-  cmplx() {}
-  cmplx(T r_, T i_): r(r_), i(i_) {}
-
-  template<typename T2> auto operator+(const T2 &other) -> cmplx<decltype(r+other.r)>
-    { return cmplx<decltype(r+other.r)>(r+other.r, i+other.i); }
 };
 
 #define PMC(a,b,c,d) { a.r=c.r+d.r; a.i=c.i+d.i; b.r=c.r-d.r; b.i=c.i-d.i; }
@@ -282,25 +317,24 @@ using dcmplx = cmplx<double>;
 
 constexpr size_t NFCT=25;
 
-struct cfftp_fctdata
+class cfftp
   {
-  size_t fct;
-  dcmplx *tw, *tws;
-  };
+  private:
 
-struct cfftp_plan_i
-  {
-  size_t length, nfct;
-  dcmplx *mem;
-  cfftp_fctdata fct[NFCT];
-  };
+    struct fctdata
+      {
+      size_t fct;
+      dcmplx *tw, *tws;
+      };
 
-typedef cfftp_plan_i * cfftp_plan;
+    size_t length, nfct;
+    arr<dcmplx> mem;
+    fctdata fct[NFCT];
 
-template<typename T> NOINLINE void pass2b (size_t ido, size_t l1, const T * restrict cc,
+template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const dcmplx * restrict wa)
   {
-  const size_t cdim=2;
+  constexpr size_t cdim=2;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -313,28 +347,10 @@ template<typename T> NOINLINE void pass2b (size_t ido, size_t l1, const T * rest
         {
         T t;
         PMC (CH(i,k,0),t,CC(i,0,k),CC(i,1,k))
-        A_EQ_B_MUL_C (CH(i,k,1),WA(0,i),t)
-        }
-      }
-  }
-
-template<typename T> NOINLINE static void pass2f (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
-  {
-  const size_t cdim=2;
-
-  if (ido==1)
-    for (size_t k=0; k<l1; ++k)
-      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
-  else
-    for (size_t k=0; k<l1; ++k)
-      {
-      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
-      for (size_t i=1; i<ido; ++i)
-        {
-        T t;
-        PMC (CH(i,k,0),t,CC(i,0,k),CC(i,1,k))
-        A_EQ_CB_MUL_C (CH(i,k,1),WA(0,i),t)
+        if (bwd)
+          A_EQ_B_MUL_C (CH(i,k,1),WA(0,i),t)
+        else
+          A_EQ_CB_MUL_C (CH(i,k,1),WA(0,i),t)
         }
       }
   }
@@ -365,11 +381,11 @@ template<typename T> NOINLINE static void pass2f (size_t ido, size_t l1, const T
         A_EQ_B_MUL_C (CH(i,k,u1),WA(u1-1,i),da) \
         A_EQ_B_MUL_C (CH(i,k,u2),WA(u2-1,i),db) \
         }
-template<typename T> static void pass3b (size_t ido, size_t l1, const T * restrict cc,
+template<typename T> void pass3b (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const dcmplx * restrict wa)
   {
-  const size_t cdim=3;
-  const double tw1r=-0.5, tw1i= 0.86602540378443864676;
+  constexpr size_t cdim=3;
+  constexpr double tw1r=-0.5, tw1i= 0.86602540378443864676;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -764,7 +780,7 @@ template<typename T> NOINLINE void pass11 (size_t ido, size_t l1, const T * rest
 #define CX2(a,b) cc[(a)+idl1*(b)]
 #define CH2(a,b) ch[(a)+idl1*(b)]
 
-template<typename T> NOINLINE int passg (size_t ido, size_t ip, size_t l1,
+template<typename T> NOINLINE void passg (size_t ido, size_t ip, size_t l1,
   T * restrict cc, T * restrict ch, const dcmplx * restrict wa,
   const dcmplx * restrict csarr, const int sign)
   {
@@ -772,8 +788,7 @@ template<typename T> NOINLINE int passg (size_t ido, size_t ip, size_t l1,
   size_t ipph = (ip+1)/2;
   size_t idl1 = ido*l1;
 
-  dcmplx * restrict wal=RALLOC(dcmplx,ip);
-  if (!wal) return -1;
+  arr<dcmplx> wal(ip);
   wal[0]=(dcmplx){1.,0.};
   for (size_t i=1; i<ip; ++i)
     wal[i]=(dcmplx){csarr[i].r,sign*csarr[i].i};
@@ -833,7 +848,6 @@ template<typename T> NOINLINE int passg (size_t ido, size_t ip, size_t l1,
         }
       }
     }
-  DEALLOC(wal);
 
   // shuffling and twiddling
   if (ido==1)
@@ -861,46 +875,42 @@ template<typename T> NOINLINE int passg (size_t ido, size_t ip, size_t l1,
           }
         }
     }
-  return 0;
   }
 
 #undef CH2
 #undef CX2
 #undef CX
 
-template<typename T> WARN_UNUSED_RESULT int pass_all(cfftp_plan plan, T c[], double fct,
+template<typename T> void pass_all(T c[], double fact,
   const int sign)
   {
-  if (plan->length==1) return 0;
-  size_t len=plan->length;
-  size_t l1=1, nf=plan->nfct;
-  T *ch = RALLOC(T, len);
-  if (!ch) return -1;
-  T *p1=c, *p2=ch;
+  if (length==1) return;
+  size_t l1=1, nf=nfct;
+  arr<T> ch(length);
+  T *p1=c, *p2=ch.data();
 
   for(size_t k1=0; k1<nf; k1++)
     {
-    size_t ip=plan->fct[k1].fct;
+    size_t ip=fct[k1].fct;
     size_t l2=ip*l1;
-    size_t ido = len/l2;
+    size_t ido = length/l2;
     if     (ip==4)
-      sign>0 ? pass4b (ido, l1, p1, p2, plan->fct[k1].tw)
-             : pass4f (ido, l1, p1, p2, plan->fct[k1].tw);
+      sign>0 ? pass4b (ido, l1, p1, p2, fct[k1].tw)
+             : pass4f (ido, l1, p1, p2, fct[k1].tw);
     else if(ip==2)
-      sign>0 ? pass2b (ido, l1, p1, p2, plan->fct[k1].tw)
-             : pass2f (ido, l1, p1, p2, plan->fct[k1].tw);
+      sign>0 ? pass2<T, true>(ido, l1, p1, p2, fct[k1].tw)
+             : pass2<T, false>(ido, l1, p1, p2, fct[k1].tw);
     else if(ip==3)
-      sign>0 ? pass3b (ido, l1, p1, p2, plan->fct[k1].tw)
-             : pass3f (ido, l1, p1, p2, plan->fct[k1].tw);
+      sign>0 ? pass3b (ido, l1, p1, p2, fct[k1].tw)
+             : pass3f (ido, l1, p1, p2, fct[k1].tw);
     else if(ip==5)
-      sign>0 ? pass5b (ido, l1, p1, p2, plan->fct[k1].tw)
-             : pass5f (ido, l1, p1, p2, plan->fct[k1].tw);
-    else if(ip==7)  pass7 (ido, l1, p1, p2, plan->fct[k1].tw, sign);
-    else if(ip==11) pass11(ido, l1, p1, p2, plan->fct[k1].tw, sign);
+      sign>0 ? pass5b (ido, l1, p1, p2, fct[k1].tw)
+             : pass5f (ido, l1, p1, p2, fct[k1].tw);
+    else if(ip==7)  pass7 (ido, l1, p1, p2, fct[k1].tw, sign);
+    else if(ip==11) pass11(ido, l1, p1, p2, fct[k1].tw, sign);
     else
       {
-      if (passg(ido, ip, l1, p1, p2, plan->fct[k1].tw, plan->fct[k1].tws, sign))
-        { DEALLOC(ch); return -1; }
+      passg(ido, ip, l1, p1, p2, fct[k1].tw, fct[k1].tws, sign);
       swap(p1,p2);
       }
     swap(p1,p2);
@@ -908,24 +918,22 @@ template<typename T> WARN_UNUSED_RESULT int pass_all(cfftp_plan plan, T c[], dou
     }
   if (p1!=c)
     {
-    if (fct!=1.)
-      for (size_t i=0; i<len; ++i)
+    if (fact!=1.)
+      for (size_t i=0; i<length; ++i)
         {
-        c[i].r = ch[i].r*fct;
-        c[i].i = ch[i].i*fct;
+        c[i].r = ch[i].r*fact;
+        c[i].i = ch[i].i*fact;
         }
     else
-      memcpy (c,p1,len*sizeof(T));
+      memcpy (c,p1,length*sizeof(T));
     }
   else
-    if (fct!=1.)
-      for (size_t i=0; i<len; ++i)
+    if (fact!=1.)
+      for (size_t i=0; i<length; ++i)
         {
-        c[i].r *= fct;
-        c[i].i *= fct;
+        c[i].r *= fact;
+        c[i].i *= fact;
         }
-  DEALLOC(ch);
-  return 0;
   }
 
 #undef PMSIGNC
@@ -942,52 +950,53 @@ template<typename T> WARN_UNUSED_RESULT int pass_all(cfftp_plan plan, T c[], dou
 #undef ADDC
 #undef PMC
 
-template<typename T> NOINLINE WARN_UNUSED_RESULT
-int cfftp_forward(cfftp_plan plan, T c[], double fct)
-  { return pass_all(plan, c, fct, -1); }
+public:
 
-template<typename T> NOINLINE WARN_UNUSED_RESULT
-int cfftp_backward(cfftp_plan plan, T c[], double fct)
-  { return pass_all(plan, c, fct, 1); }
+template<typename T> NOINLINE
+void forward(T c[], double fct)
+  { pass_all(c, fct, -1); }
 
-NOINLINE WARN_UNUSED_RESULT
-int cfftp_factorize (cfftp_plan plan)
+template<typename T> NOINLINE
+void backward(T c[], double fct)
+  { pass_all(c, fct, 1); }
+
+private:
+
+NOINLINE void factorize ()
   {
-  size_t length=plan->length;
-  size_t nfct=0;
-  while ((length%4)==0)
-    { if (nfct>=NFCT) return -1; plan->fct[nfct++].fct=4; length>>=2; }
-  if ((length%2)==0)
+  nfct=0;
+  size_t len=length;
+  while ((len%4)==0)
+    { if (nfct>=NFCT) throw OOM(); fct[nfct++].fct=4; len>>=2; }
+  if ((len%2)==0)
     {
-    length>>=1;
+    len>>=1;
     // factor 2 should be at the front of the factor list
-    if (nfct>=NFCT) return -1;
-    plan->fct[nfct++].fct=2;
-    swap(plan->fct[0].fct, plan->fct[nfct-1].fct);
+    if (nfct>=NFCT) throw OOM();
+    fct[nfct++].fct=2;
+    swap(fct[0].fct, fct[nfct-1].fct);
     }
-  size_t maxl=(size_t)(sqrt((double)length))+1;
-  for (size_t divisor=3; (length>1)&&(divisor<maxl); divisor+=2)
-    if ((length%divisor)==0)
+  size_t maxl=(size_t)(sqrt((double)len))+1;
+  for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
+    if ((len%divisor)==0)
       {
-      while ((length%divisor)==0)
+      while ((len%divisor)==0)
         {
-        if (nfct>=NFCT) return -1;
-        plan->fct[nfct++].fct=divisor;
-        length/=divisor;
+        if (nfct>=NFCT) throw OOM();
+        fct[nfct++].fct=divisor;
+        len/=divisor;
         }
-      maxl=(size_t)(sqrt((double)length))+1;
+      maxl=(size_t)(sqrt((double)len))+1;
       }
-  if (length>1) plan->fct[nfct++].fct=length;
-  plan->nfct=nfct;
-  return 0;
+  if (len>1) fct[nfct++].fct=len;
   }
 
-NOINLINE size_t cfftp_twsize (cfftp_plan plan)
+NOINLINE size_t twsize ()
   {
   size_t twsize=0, l1=1;
-  for (size_t k=0; k<plan->nfct; ++k)
+  for (size_t k=0; k<nfct; ++k)
     {
-    size_t ip=plan->fct[k].fct, ido= plan->length/(l1*ip);
+    size_t ip=fct[k].fct, ido= length/(l1*ip);
     twsize+=(ip-1)*(ido-1);
     if (ip>11)
       twsize+=ip;
@@ -996,140 +1005,94 @@ NOINLINE size_t cfftp_twsize (cfftp_plan plan)
   return twsize;
   }
 
-NOINLINE WARN_UNUSED_RESULT int cfftp_comp_twiddle (cfftp_plan plan)
+NOINLINE void comp_twiddle()
   {
-  size_t length=plan->length;
-  double *twid = RALLOC(double, 2*length);
-  if (!twid) return -1;
-  sincos_2pibyn(length, twid);
+  sincos_2pibyn twid(length);
   size_t l1=1;
   size_t memofs=0;
-  for (size_t k=0; k<plan->nfct; ++k)
+  for (size_t k=0; k<nfct; ++k)
     {
-    size_t ip=plan->fct[k].fct, ido= length/(l1*ip);
-    plan->fct[k].tw=plan->mem+memofs;
+    size_t ip=fct[k].fct, ido= length/(l1*ip);
+    fct[k].tw=mem.data()+memofs;
     memofs+=(ip-1)*(ido-1);
     for (size_t j=1; j<ip; ++j)
       for (size_t i=1; i<ido; ++i)
         {
-        plan->fct[k].tw[(j-1)*(ido-1)+i-1].r = twid[2*j*l1*i];
-        plan->fct[k].tw[(j-1)*(ido-1)+i-1].i = twid[2*j*l1*i+1];
+        fct[k].tw[(j-1)*(ido-1)+i-1].r = twid[2*j*l1*i];
+        fct[k].tw[(j-1)*(ido-1)+i-1].i = twid[2*j*l1*i+1];
         }
     if (ip>11)
       {
-      plan->fct[k].tws=plan->mem+memofs;
+      fct[k].tws=mem.data()+memofs;
       memofs+=ip;
       for (size_t j=0; j<ip; ++j)
         {
-        plan->fct[k].tws[j].r = twid[2*j*l1*ido];
-        plan->fct[k].tws[j].i = twid[2*j*l1*ido+1];
+        fct[k].tws[j].r = twid[2*j*l1*ido];
+        fct[k].tws[j].i = twid[2*j*l1*ido+1];
         }
       }
     l1*=ip;
     }
-  DEALLOC(twid);
-  return 0;
   }
 
-cfftp_plan make_cfftp_plan (size_t length)
+public:
+
+cfftp(size_t length_)
   {
-  if (length==0) return NULL;
-  cfftp_plan plan = RALLOC(cfftp_plan_i,1);
-  if (!plan) return NULL;
-  plan->length=length;
-  plan->nfct=0;
-  for (size_t i=0; i<NFCT; ++i)
-    plan->fct[i]=(cfftp_fctdata){0,0,0};
-  plan->mem=0;
-  if (length==1) return plan;
-  if (cfftp_factorize(plan)!=0) { DEALLOC(plan); return NULL; }
-  size_t tws=cfftp_twsize(plan);
-  plan->mem=RALLOC(dcmplx,tws);
-  if (!plan->mem) { DEALLOC(plan); return NULL; }
-  if (cfftp_comp_twiddle(plan)!=0)
-    { DEALLOC(plan->mem); DEALLOC(plan); return NULL; }
-  return plan;
+  length=length_;
+  if (length==0) throw 42;
+  nfct=0;
+  if (length==1) return;
+  factorize();
+  size_t tws=twsize();
+  mem.resize(tws);
+  comp_twiddle();
   }
 
-static void destroy_cfftp_plan (cfftp_plan plan)
-  {
-  DEALLOC(plan->mem);
-  DEALLOC(plan);
-  }
+};
 
-struct fftblue_plan_i
+struct fftblue
   {
   size_t n, n2;
-  cfftp_plan plan;
-  double *mem;
+  cfftp plan;
+  arr<double> mem;
   double *bk, *bkf;
-  };
-typedef fftblue_plan_i * fftblue_plan;
 
-NOINLINE fftblue_plan make_fftblue_plan (size_t length)
-  {
-  fftblue_plan plan = RALLOC(fftblue_plan_i,1);
-  if (!plan) return NULL;
-  plan->n = length;
-  plan->n2 = good_size(plan->n*2-1);
-  plan->mem = RALLOC(double, 2*plan->n+2*plan->n2);
-  if (!plan->mem) { DEALLOC(plan); return NULL; }
-  plan->bk  = plan->mem;
-  plan->bkf = plan->bk+2*plan->n;
-
+  fftblue(size_t length)
+    : n(length), n2(good_size(n*2-1)), plan(n2), mem(2*(n+n2)), bk(mem.data()), bkf(mem.data()+2*n)
+    {
 /* initialize b_k */
-  double *tmp = RALLOC(double,4*plan->n);
-  if (!tmp) { DEALLOC(plan->mem); DEALLOC(plan); return NULL; }
-  sincos_2pibyn(2*plan->n,tmp);
-  plan->bk[0] = 1;
-  plan->bk[1] = 0;
+  sincos_2pibyn tmp(2*n);
+  bk[0] = 1;
+  bk[1] = 0;
 
   size_t coeff=0;
-  for (size_t m=1; m<plan->n; ++m)
+  for (size_t m=1; m<n; ++m)
     {
     coeff+=2*m-1;
-    if (coeff>=2*plan->n) coeff-=2*plan->n;
-    plan->bk[2*m  ] = tmp[2*coeff  ];
-    plan->bk[2*m+1] = tmp[2*coeff+1];
+    if (coeff>=2*n) coeff-=2*n;
+    bk[2*m  ] = tmp[2*coeff  ];
+    bk[2*m+1] = tmp[2*coeff+1];
     }
 
   /* initialize the zero-padded, Fourier transformed b_k. Add normalisation. */
-  double xn2 = 1./plan->n2;
-  plan->bkf[0] = plan->bk[0]*xn2;
-  plan->bkf[1] = plan->bk[1]*xn2;
-  for (size_t m=2; m<2*plan->n; m+=2)
+  double xn2 = 1./n2;
+  bkf[0] = bk[0]*xn2;
+  bkf[1] = bk[1]*xn2;
+  for (size_t m=2; m<2*n; m+=2)
     {
-    plan->bkf[m]   = plan->bkf[2*plan->n2-m]   = plan->bk[m]   *xn2;
-    plan->bkf[m+1] = plan->bkf[2*plan->n2-m+1] = plan->bk[m+1] *xn2;
+    bkf[m]   = bkf[2*n2-m]   = bk[m]   *xn2;
+    bkf[m+1] = bkf[2*n2-m+1] = bk[m+1] *xn2;
     }
-  for (size_t m=2*plan->n;m<=(2*plan->n2-2*plan->n+1);++m)
-    plan->bkf[m]=0.;
-  plan->plan=make_cfftp_plan(plan->n2);
-  if (!plan->plan)
-    { DEALLOC(tmp); DEALLOC(plan->mem); DEALLOC(plan); return NULL; }
-  if (cfftp_forward(plan->plan,(dcmplx *)plan->bkf,1.)!=0)
-    { DEALLOC(tmp); DEALLOC(plan->mem); DEALLOC(plan); return NULL; }
-  DEALLOC(tmp);
+  for (size_t m=2*n;m<=(2*n2-2*n+1);++m)
+    bkf[m]=0.;
+  plan.forward((dcmplx *)bkf,1.);
+    }
 
-  return plan;
-  }
-
-NOINLINE void destroy_fftblue_plan (fftblue_plan plan)
+template<typename T> NOINLINE
+void fftblue_fft(T c[], int isign, double fct)
   {
-  DEALLOC(plan->mem);
-  destroy_cfftp_plan(plan->plan);
-  DEALLOC(plan);
-  }
-
-template<typename T> NOINLINE WARN_UNUSED_RESULT
-int fftblue_fft(fftblue_plan plan, T c[], int isign, double fct)
-  {
-  size_t n=plan->n;
-  size_t n2=plan->n2;
-  double *bk  = plan->bk;
-  double *bkf = plan->bkf;
-  T *akf = RALLOC(T, 2*n2);
-  if (!akf) return -1;
+  arr<T> akf(2*n2);
 
 /* initialize a_k and FFT it */
   if (isign>0)
@@ -1147,8 +1110,7 @@ int fftblue_fft(fftblue_plan plan, T c[], int isign, double fct)
   for (size_t m=2*n; m<2*n2; ++m)
     akf[m]=0.*c[0];
 
-  if (cfftp_forward (plan->plan,(cmplx<T> *)akf,fct)!=0)
-    { DEALLOC(akf); return -1; }
+  plan.forward ((cmplx<T> *)akf.data(),fct);
 
 /* do the convolution */
   if (isign>0)
@@ -1167,8 +1129,7 @@ int fftblue_fft(fftblue_plan plan, T c[], int isign, double fct)
       }
 
 /* inverse FFT */
-  if (cfftp_backward (plan->plan,(cmplx<T> *)akf,1.)!=0)
-    { DEALLOC(akf); return -1; }
+  plan.backward ((cmplx<T> *)akf.data(),1.);
 
 /* multiply by b_k */
   if (isign>0)
@@ -1183,95 +1144,66 @@ int fftblue_fft(fftblue_plan plan, T c[], int isign, double fct)
       c[m]   = bk[m]  *akf[m] + bk[m+1]*akf[m+1];
       c[m+1] =-bk[m+1]*akf[m] + bk[m]  *akf[m+1];
       }
-  DEALLOC(akf);
-  return 0;
   }
 
-template<typename T> WARN_UNUSED_RESULT
-int cfftblue_backward(fftblue_plan plan, T c[], double fct)
-  { return fftblue_fft(plan,c,1,fct); }
+template<typename T>
+void backward(T c[], double fct)
+  { fftblue_fft(c,1,fct); }
 
-template<typename T> WARN_UNUSED_RESULT
-int cfftblue_forward(fftblue_plan plan, T c[], double fct)
-  { return fftblue_fft(plan,c,-1,fct); }
-
+template<typename T>
+void forward(T c[], double fct)
+  { fftblue_fft(c,-1,fct); }
+};
 
 } // unnamed namespace
 
-struct pocketfft_plan_c_i;
-typedef pocketfft_plan_c_i * pocketfft_plan_c;
-
-typedef struct pocketfft_plan_c_i
+struct pocketfft_c
   {
-  cfftp_plan packplan;
-  fftblue_plan blueplan;
-  } pocketfft_plan_c_i;
+  private:
+    unique_ptr<cfftp> packplan;
+    unique_ptr<fftblue> blueplan;
 
-pocketfft_plan_c pocketfft_make_plan_c (size_t length)
+  public:
+    pocketfft_c(size_t length) : packplan(nullptr), blueplan(nullptr)
+      {
+      if (length==0) throw 42;
+      if ((length<50) || (largest_prime_factor(length)<=sqrt(length)))
+        {
+        packplan=make_unique<cfftp>(length);
+        return;
+        }
+      double comp1 = cost_guess(length);
+      double comp2 = 2*cost_guess(good_size(2*length-1));
+      comp2*=1.5; /* fudge factor that appears to give good overall performance */
+      if (comp2<comp1) // use Bluestein
+        blueplan=make_unique<fftblue>(length);
+      else
+        packplan=make_unique<cfftp>(length);
+      }
+
+template<typename T> void backward(T c[], double fct)
   {
-  if (length==0) return NULL;
-  pocketfft_plan_c plan = RALLOC(pocketfft_plan_c_i,1);
-  if (!plan) return NULL;
-  plan->blueplan=0;
-  plan->packplan=0;
-  if ((length<50) || (largest_prime_factor(length)<=sqrt(length)))
-    {
-    plan->packplan=make_cfftp_plan(length);
-    if (!plan->packplan) { DEALLOC(plan); return NULL; }
-    return plan;
-    }
-  double comp1 = cost_guess(length);
-  double comp2 = 2*cost_guess(good_size(2*length-1));
-  comp2*=1.5; /* fudge factor that appears to give good overall performance */
-  if (comp2<comp1) // use Bluestein
-    {
-    plan->blueplan=make_fftblue_plan(length);
-    if (!plan->blueplan) { DEALLOC(plan); return NULL; }
-    }
-  else
-    {
-    plan->packplan=make_cfftp_plan(length);
-    if (!plan->packplan) { DEALLOC(plan); return NULL; }
-    }
-  return plan;
+  if (packplan)
+    return packplan->backward((dcmplx *)c,fct);
+  return blueplan->backward(c,fct);
   }
 
-void pocketfft_delete_plan_c (pocketfft_plan_c plan)
+template<typename T> void forward(T c[], double fct)
   {
-  if (plan->blueplan)
-    destroy_fftblue_plan(plan->blueplan);
-  if (plan->packplan)
-    destroy_cfftp_plan(plan->packplan);
-  DEALLOC(plan);
+  if (packplan)
+    return packplan->forward((dcmplx *)c,fct);
+  return blueplan->forward(c,fct);
   }
-
-template<typename T> WARN_UNUSED_RESULT
-int pocketfft_backward_c(pocketfft_plan_c plan, T c[], double fct)
-  {
-  if (plan->packplan)
-    return cfftp_backward(plan->packplan,(dcmplx *)c,fct);
-  // if (plan->blueplan)
-  return cfftblue_backward(plan->blueplan,c,fct);
-  }
-
-template<typename T> WARN_UNUSED_RESULT
-int pocketfft_forward_c(pocketfft_plan_c plan, T c[], double fct)
-  {
-  if (plan->packplan)
-    return cfftp_forward(plan->packplan,(dcmplx *)c,fct);
-  // if (plan->blueplan)
-  return cfftblue_forward(plan->blueplan,c,fct);
-  }
-
+  };
 #define maxlen 8192
 
-static void fill_random (double *data, size_t length)
+void fill_random (double *data, size_t length)
   {
   for (size_t m=0; m<length; ++m)
     data[m] = rand()/(RAND_MAX+1.0)-0.5;
   }
 
-static double errcalc (double *data, double *odata, size_t length)
+double errcalc (double *data, double *odata, size_t length)
   {
   double sum = 0, errsum = 0;
   for (size_t m=0; m<length; ++m)
@@ -1282,7 +1214,7 @@ static double errcalc (double *data, double *odata, size_t length)
   return sqrt(errsum/sum);
   }
 #include <stdio.h>
-template<typename T, int n> static int test_complex(void)
+template<typename T, int n> int test_complex(void)
   {
   double data[2*n*maxlen], odata[2*n*maxlen];
   fill_random (odata, 2*n*maxlen);
@@ -1292,10 +1224,12 @@ template<typename T, int n> static int test_complex(void)
   for (int length=1; length<=maxlen; ++length)
     {
     memcpy (data,odata,2*n*length*sizeof(double));
-    pocketfft_plan_c plan = pocketfft_make_plan_c (length);
-    pocketfft_forward_c(plan, (T *)data, 1.);
-    pocketfft_backward_c(plan, (T *)data, 1./length);
-    pocketfft_delete_plan_c (plan);
+    pocketfft_c plan(length);
+for (int x=0; x<1; ++x)
+  {
+    plan.forward((T *)data, 1.);
+    plan.backward((T *)data, 1./length);
+  }
     double err = errcalc (data, odata, 2*n*length);
     if (err>epsilon)
       {
@@ -1316,5 +1250,5 @@ template<typename T, int n> static int test_complex(void)
 int main()
   {
   double *a=RALLOC(double,1234560);
-  test_complex<__m256d,4>();
+  test_complex<double,1>();
   }
