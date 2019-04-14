@@ -32,7 +32,11 @@ template<typename T> struct arr
 
   public:
     arr() : p(0), sz(0) {}
-    arr(size_t n) : p(RALLOC(T, n)), sz(n) {}
+    arr(size_t n) : p(RALLOC(T, n)), sz(n)
+      {
+      if ((!p) && (n!=0))
+        throw OOM();
+      }
     ~arr() { DEALLOC(p); }
 
     void resize(size_t n)
@@ -292,26 +296,38 @@ NOINLINE size_t good_size(size_t n)
 
 template<typename T> struct cmplx {
   T r, i;
+  cmplx() {}
+  cmplx(T r_, T i_) : r(r_), i(i_) {}
+  cmplx &operator+= (const cmplx &other)
+    { r+=other.r; i+=other.i; return *this; }
+  cmplx &operator*= (double other)
+    { r*=other; i*=other; return *this; }
+  cmplx operator+ (const cmplx &other) const
+    { return cmplx(r+other.r, i+other.i); }
+  cmplx operator- (const cmplx &other) const
+    { return cmplx(r-other.r, i-other.i); }
+  template<typename T2> auto operator* (const cmplx<T2> &other) const -> cmplx<decltype(r+other.r)>
+    {
+    return {r*other.r-i*other.i, r*other.i + i*other.r};
+    }
 };
+template<typename T> void PMC(cmplx<T> &a, cmplx<T> &b, const cmplx<T> &c, const cmplx<T> &d)
+  { a = c+d; b = c-d; }
 
-#define PMC(a,b,c,d) { a.r=c.r+d.r; a.i=c.i+d.i; b.r=c.r-d.r; b.i=c.i-d.i; }
-#define ADDC(a,b,c) { a.r=b.r+c.r; a.i=b.i+c.i; }
-#define SCALEC(a,b) { a.r*=b; a.i*=b; }
-#define ROT90(a) { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
-#define ROTM90(a) { auto tmp_=-a.r; a.r=a.i; a.i=tmp_; }
+template<typename T> void ROT90(cmplx<T> &a)
+  { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
+template<typename T> void ROTM90(cmplx<T> &a)
+  { auto tmp_=-a.r; a.r=a.i; a.i=tmp_; }
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define WA(x,i) wa[(i)-1+(x)*(ido-1)]
-/* a = b*c */
-#define A_EQ_B_MUL_C(a,b,c) { a.r=b.r*c.r-b.i*c.i; a.i=b.r*c.i+b.i*c.r; }
+
 /* a = conj(b)*c*/
 #define A_EQ_CB_MUL_C(a,b,c) { a.r=b.r*c.r+b.i*c.i; a.i=b.r*c.i-b.i*c.r; }
 
 #define PMSIGNC(a,b,c,d) { a.r=c.r+sign*d.r; a.i=c.i+sign*d.i; b.r=c.r-sign*d.r; b.i=c.i-sign*d.i; }
 /* a = b*c */
 #define MULPMSIGNC(a,b,c) { a.r=b.r*c.r-sign*b.i*c.i; a.i=b.r*c.i+sign*b.i*c.r; }
-/* a *= b */
-#define MULPMSIGNCEQ(a,b) { auto xtmp=a.r; a.r=b.r*a.r-sign*b.i*a.i; a.i=b.r*a.i+sign*b.i*xtmp; }
 
 using dcmplx = cmplx<double>;
 
@@ -338,17 +354,17 @@ template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
-      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
+      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k));
   else
     for (size_t k=0; k<l1; ++k)
       {
-      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k))
+      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k));
       for (size_t i=1; i<ido; ++i)
         {
         T t;
-        PMC (CH(i,k,0),t,CC(i,0,k),CC(i,1,k))
+        PMC (CH(i,k,0),t,CC(i,0,k),CC(i,1,k));
         if (bwd)
-          A_EQ_B_MUL_C (CH(i,k,1),WA(0,i),t)
+          CH(i,k,1) = WA(0,i)*t;
         else
           A_EQ_CB_MUL_C (CH(i,k,1),WA(0,i),t)
         }
@@ -357,7 +373,7 @@ template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const
 
 #define PREP3(idx) \
         T t0 = CC(idx,0,k), t1, t2; \
-        PMC (t1,t2,CC(idx,1,k),CC(idx,2,k)) \
+        PMC (t1,t2,CC(idx,1,k),CC(idx,2,k)); \
         CH(idx,k,0).r=t0.r+t1.r; \
         CH(idx,k,0).i=t0.i+t1.i;
 #define PARTSTEP3a(u1,u2,twr,twi) \
@@ -367,7 +383,7 @@ template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const
         ca.i=t0.i+twr*t1.i; \
         cb.i=twi*t2.r; \
         cb.r=-(twi*t2.i); \
-        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) \
+        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) ;\
         }
 
 #define PARTSTEP3b(u1,u2,twr,twi) \
@@ -377,9 +393,9 @@ template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const
         ca.i=t0.i+twr*t1.i; \
         cb.i=twi*t2.r; \
         cb.r=-(twi*t2.i); \
-        PMC(da,db,ca,cb) \
-        A_EQ_B_MUL_C (CH(i,k,u1),WA(u1-1,i),da) \
-        A_EQ_B_MUL_C (CH(i,k,u2),WA(u2-1,i),db) \
+        PMC(da,db,ca,cb); \
+        CH(i,k,u1) = WA(u1-1,i)*da; \
+        CH(i,k,u2) = WA(u2-1,i)*db; \
         }
 template<typename T> void pass3b (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const dcmplx * restrict wa)
@@ -414,7 +430,7 @@ template<typename T> void pass3b (size_t ido, size_t l1, const T * restrict cc,
         ca.i=t0.i+twr*t1.i; \
         cb.i=twi*t2.r; \
         cb.r=-(twi*t2.i); \
-        PMC(da,db,ca,cb) \
+        PMC(da,db,ca,cb); \
         A_EQ_CB_MUL_C (CH(i,k,u1),WA(u1-1,i),da) \
         A_EQ_CB_MUL_C (CH(i,k,u2),WA(u2-1,i),db) \
         }
@@ -454,36 +470,36 @@ template<typename T> NOINLINE void pass4b (size_t ido, size_t l1, const T * rest
     for (size_t k=0; k<l1; ++k)
       {
       T t1, t2, t3, t4;
-      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
-      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-      ROT90(t4)
-      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
-      PMC(CH(0,k,1),CH(0,k,3),t1,t4)
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k));
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k));
+      ROT90(t4);
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3);
+      PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
   else
     for (size_t k=0; k<l1; ++k)
       {
       {
       T t1, t2, t3, t4;
-      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
-      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-      ROT90(t4)
-      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
-      PMC(CH(0,k,1),CH(0,k,3),t1,t4)
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k));
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k));
+      ROT90(t4);
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3);
+      PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
       for (size_t i=1; i<ido; ++i)
         {
         T c2, c3, c4, t1, t2, t3, t4;
         T cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
-        PMC(t2,t1,cc0,cc2)
-        PMC(t3,t4,cc1,cc3)
-        ROT90(t4)
+        PMC(t2,t1,cc0,cc2);
+        PMC(t3,t4,cc1,cc3);
+        ROT90(t4);
         dcmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
-        PMC(CH(i,k,0),c3,t2,t3)
-        PMC(c2,c4,t1,t4)
-        A_EQ_B_MUL_C (CH(i,k,1),wa0,c2)
-        A_EQ_B_MUL_C (CH(i,k,2),wa1,c3)
-        A_EQ_B_MUL_C (CH(i,k,3),wa2,c4)
+        PMC(CH(i,k,0),c3,t2,t3);
+        PMC(c2,c4,t1,t4);
+        CH(i,k,1) = wa0*c2;
+        CH(i,k,2) = wa1*c3;
+        CH(i,k,3) = wa2*c4;
         }
       }
   }
@@ -496,33 +512,33 @@ template<typename T> NOINLINE void pass4f (size_t ido, size_t l1, const T * rest
     for (size_t k=0; k<l1; ++k)
       {
       T t1, t2, t3, t4;
-      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
-      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-      ROTM90(t4)
-      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
-      PMC(CH(0,k,1),CH(0,k,3),t1,t4)
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k));
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k));
+      ROTM90(t4);
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3);
+      PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
   else
     for (size_t k=0; k<l1; ++k)
       {
       {
       T t1, t2, t3, t4;
-      PMC(t2,t1,CC(0,0,k),CC(0,2,k))
-      PMC(t3,t4,CC(0,1,k),CC(0,3,k))
-      ROTM90(t4)
-      PMC(CH(0,k,0),CH(0,k,2),t2,t3)
-      PMC (CH(0,k,1),CH(0,k,3),t1,t4)
+      PMC(t2,t1,CC(0,0,k),CC(0,2,k));
+      PMC(t3,t4,CC(0,1,k),CC(0,3,k));
+      ROTM90(t4);
+      PMC(CH(0,k,0),CH(0,k,2),t2,t3);
+      PMC (CH(0,k,1),CH(0,k,3),t1,t4);
       }
       for (size_t i=1; i<ido; ++i)
         {
         T c2, c3, c4, t1, t2, t3, t4;
         T cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
-        PMC(t2,t1,cc0,cc2)
-        PMC(t3,t4,cc1,cc3)
-        ROTM90(t4)
+        PMC(t2,t1,cc0,cc2);
+        PMC(t3,t4,cc1,cc3);
+        ROTM90(t4);
         dcmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
-        PMC(CH(i,k,0),c3,t2,t3)
-        PMC(c2,c4,t1,t4)
+        PMC(CH(i,k,0),c3,t2,t3);
+        PMC(c2,c4,t1,t4);
         A_EQ_CB_MUL_C (CH(i,k,1),wa0,c2)
         A_EQ_CB_MUL_C (CH(i,k,2),wa1,c3)
         A_EQ_CB_MUL_C (CH(i,k,3),wa2,c4)
@@ -532,8 +548,8 @@ template<typename T> NOINLINE void pass4f (size_t ido, size_t l1, const T * rest
 
 #define PREP5(idx) \
         T t0 = CC(idx,0,k), t1, t2, t3, t4; \
-        PMC (t1,t4,CC(idx,1,k),CC(idx,4,k)) \
-        PMC (t2,t3,CC(idx,2,k),CC(idx,3,k)) \
+        PMC (t1,t4,CC(idx,1,k),CC(idx,4,k)); \
+        PMC (t2,t3,CC(idx,2,k),CC(idx,3,k)); \
         CH(idx,k,0).r=t0.r+t1.r+t2.r; \
         CH(idx,k,0).i=t0.i+t1.i+t2.i;
 
@@ -544,7 +560,7 @@ template<typename T> NOINLINE void pass4f (size_t ido, size_t l1, const T * rest
         ca.i=t0.i+twar*t1.i+twbr*t2.i; \
         cb.i=twai*t4.r twbi*t3.r; \
         cb.r=-(twai*t4.i twbi*t3.i); \
-        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) \
+        PMC(CH(0,k,u1),CH(0,k,u2),ca,cb); \
         }
 
 #define PARTSTEP5b(u1,u2,twar,twbr,twai,twbi) \
@@ -554,9 +570,9 @@ template<typename T> NOINLINE void pass4f (size_t ido, size_t l1, const T * rest
         ca.i=t0.i+twar*t1.i+twbr*t2.i; \
         cb.i=twai*t4.r twbi*t3.r; \
         cb.r=-(twai*t4.i twbi*t3.i); \
-        PMC(da,db,ca,cb) \
-        A_EQ_B_MUL_C (CH(i,k,u1),WA(u1-1,i),da) \
-        A_EQ_B_MUL_C (CH(i,k,u2),WA(u2-1,i),db) \
+        PMC(da,db,ca,cb); \
+        CH(i,k,u1) = WA(u1-1,i)*da; \
+        CH(i,k,u2) = WA(u2-1,i)*db; \
         }
 template<typename T> NOINLINE void pass5b (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const dcmplx * restrict wa)
@@ -597,7 +613,7 @@ template<typename T> NOINLINE void pass5b (size_t ido, size_t l1, const T * rest
         ca.i=t0.i+twar*t1.i+twbr*t2.i; \
         cb.i=twai*t4.r twbi*t3.r; \
         cb.r=-(twai*t4.i twbi*t3.i); \
-        PMC(da,db,ca,cb) \
+        PMC(da,db,ca,cb); \
         A_EQ_CB_MUL_C (CH(i,k,u1),WA(u1-1,i),da) \
         A_EQ_CB_MUL_C (CH(i,k,u2),WA(u2-1,i),db) \
         }
@@ -636,9 +652,9 @@ template<typename T> NOINLINE void pass5f (size_t ido, size_t l1, const T * rest
 
 #define PREP7(idx) \
         T t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7; \
-        PMC (t2,t7,CC(idx,1,k),CC(idx,6,k)) \
-        PMC (t3,t6,CC(idx,2,k),CC(idx,5,k)) \
-        PMC (t4,t5,CC(idx,3,k),CC(idx,4,k)) \
+        PMC (t2,t7,CC(idx,1,k),CC(idx,6,k)); \
+        PMC (t3,t6,CC(idx,2,k),CC(idx,5,k)); \
+        PMC (t4,t5,CC(idx,3,k),CC(idx,4,k)); \
         CH(idx,k,0).r=t1.r+t2.r+t3.r+t4.r; \
         CH(idx,k,0).i=t1.i+t2.i+t3.i+t4.i;
 
@@ -649,7 +665,7 @@ template<typename T> NOINLINE void pass5f (size_t ido, size_t l1, const T * rest
         ca.i=t1.i+x1*t2.i+x2*t3.i+x3*t4.i; \
         cb.i=y1*t7.r y2*t6.r y3*t5.r; \
         cb.r=-(y1*t7.i y2*t6.i y3*t5.i); \
-        PMC(out1,out2,ca,cb) \
+        PMC(out1,out2,ca,cb); \
         }
 #define PARTSTEP7a(u1,u2,x1,x2,x3,y1,y2,y3) \
         PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,CH(0,k,u1),CH(0,k,u2))
@@ -701,11 +717,11 @@ template<typename T>NOINLINE void pass7(size_t ido, size_t l1, const T * restric
 
 #define PREP11(idx) \
         T t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7, t8, t9, t10, t11; \
-        PMC (t2,t11,CC(idx,1,k),CC(idx,10,k)) \
-        PMC (t3,t10,CC(idx,2,k),CC(idx, 9,k)) \
-        PMC (t4,t9 ,CC(idx,3,k),CC(idx, 8,k)) \
-        PMC (t5,t8 ,CC(idx,4,k),CC(idx, 7,k)) \
-        PMC (t6,t7 ,CC(idx,5,k),CC(idx, 6,k)) \
+        PMC (t2,t11,CC(idx,1,k),CC(idx,10,k)); \
+        PMC (t3,t10,CC(idx,2,k),CC(idx, 9,k)); \
+        PMC (t4,t9 ,CC(idx,3,k),CC(idx, 8,k)); \
+        PMC (t5,t8 ,CC(idx,4,k),CC(idx, 7,k)); \
+        PMC (t6,t7 ,CC(idx,5,k),CC(idx, 6,k)); \
         CH(idx,k,0).r=t1.r+t2.r+t3.r+t4.r+t5.r+t6.r; \
         CH(idx,k,0).i=t1.i+t2.i+t3.i+t4.i+t5.i+t6.i;
 
@@ -716,7 +732,7 @@ template<typename T>NOINLINE void pass7(size_t ido, size_t l1, const T * restric
         ca.i=t1.i+x1*t2.i+x2*t3.i+x3*t4.i+x4*t5.i+x5*t6.i; \
         cb.i=y1*t11.r y2*t10.r y3*t9.r y4*t8.r y5*t7.r; \
         cb.r=-(y1*t11.i y2*t10.i y3*t9.i y4*t8.i y5*t7.i ); \
-        PMC(out1,out2,ca,cb) \
+        PMC(out1,out2,ca,cb); \
         }
 #define PARTSTEP11a(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5) \
         PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,CH(0,k,u1),CH(0,k,u2))
@@ -799,13 +815,13 @@ template<typename T> NOINLINE void passg (size_t ido, size_t ip, size_t l1,
   for (size_t j=1, jc=ip-1; j<ipph; ++j, --jc)
     for (size_t k=0; k<l1; ++k)
       for (size_t i=0; i<ido; ++i)
-        PMC(CH(i,k,j),CH(i,k,jc),CC(i,j,k),CC(i,jc,k))
+        PMC(CH(i,k,j),CH(i,k,jc),CC(i,j,k),CC(i,jc,k));
   for (size_t k=0; k<l1; ++k)
     for (size_t i=0; i<ido; ++i)
       {
       T tmp = CH(i,k,0);
       for (size_t j=1; j<ipph; ++j)
-        ADDC(tmp,tmp,CH(i,k,j))
+        tmp+=CH(i,k,j);
       CX(i,k,0) = tmp;
       }
   for (size_t l=1, lc=ip-1; l<ipph; ++l, --lc)
@@ -855,7 +871,7 @@ template<typename T> NOINLINE void passg (size_t ido, size_t ip, size_t l1,
       for (size_t ik=0; ik<idl1; ++ik)
         {
         T t1=CX2(ik,j), t2=CX2(ik,jc);
-        PMC(CX2(ik,j),CX2(ik,jc),t1,t2)
+        PMC(CX2(ik,j),CX2(ik,jc),t1,t2);
         }
   else
     {
@@ -863,11 +879,11 @@ template<typename T> NOINLINE void passg (size_t ido, size_t ip, size_t l1,
       for (size_t k=0; k<l1; ++k)
         {
         T t1=CX(0,k,j), t2=CX(0,k,jc);
-        PMC(CX(0,k,j),CX(0,k,jc),t1,t2)
+        PMC(CX(0,k,j),CX(0,k,jc),t1,t2);
         for (size_t i=1; i<ido; ++i)
           {
           T x1, x2;
-          PMC(x1,x2,CX(i,k,j),CX(i,k,jc))
+          PMC(x1,x2,CX(i,k,j),CX(i,k,jc));
           size_t idij=(j-1)*(ido-1)+i-1;
           MULPMSIGNC (CX(i,k,j),wa[idij],x1)
           idij=(jc-1)*(ido-1)+i-1;
@@ -937,223 +953,213 @@ template<typename T> void pass_all(T c[], double fact,
   }
 
 #undef PMSIGNC
-#undef A_EQ_B_MUL_C
 #undef A_EQ_CB_MUL_C
 #undef MULPMSIGNC
-#undef MULPMSIGNCEQ
 
 #undef WA
 #undef CC
 #undef CH
-#undef ROT90
-#undef SCALEC
-#undef ADDC
 #undef PMC
 
-public:
+  public:
+    template<typename T> NOINLINE void forward(T c[], double fct)
+      { pass_all(c, fct, -1); }
 
-template<typename T> NOINLINE
-void forward(T c[], double fct)
-  { pass_all(c, fct, -1); }
+    template<typename T> NOINLINE void backward(T c[], double fct)
+      { pass_all(c, fct, 1); }
 
-template<typename T> NOINLINE
-void backward(T c[], double fct)
-  { pass_all(c, fct, 1); }
-
-private:
-
-NOINLINE void factorize ()
-  {
-  nfct=0;
-  size_t len=length;
-  while ((len%4)==0)
-    { if (nfct>=NFCT) throw OOM(); fct[nfct++].fct=4; len>>=2; }
-  if ((len%2)==0)
-    {
-    len>>=1;
-    // factor 2 should be at the front of the factor list
-    if (nfct>=NFCT) throw OOM();
-    fct[nfct++].fct=2;
-    swap(fct[0].fct, fct[nfct-1].fct);
-    }
-  size_t maxl=(size_t)(sqrt((double)len))+1;
-  for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
-    if ((len%divisor)==0)
+  private:
+    NOINLINE void factorize()
       {
-      while ((len%divisor)==0)
+      nfct=0;
+      size_t len=length;
+      while ((len%4)==0)
+        { if (nfct>=NFCT) throw OOM(); fct[nfct++].fct=4; len>>=2; }
+      if ((len%2)==0)
         {
+        len>>=1;
+        // factor 2 should be at the front of the factor list
         if (nfct>=NFCT) throw OOM();
-        fct[nfct++].fct=divisor;
-        len/=divisor;
+        fct[nfct++].fct=2;
+        swap(fct[0].fct, fct[nfct-1].fct);
         }
-      maxl=(size_t)(sqrt((double)len))+1;
+      size_t maxl=(size_t)(sqrt((double)len))+1;
+      for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
+        if ((len%divisor)==0)
+          {
+          while ((len%divisor)==0)
+            {
+            if (nfct>=NFCT) throw OOM();
+            fct[nfct++].fct=divisor;
+            len/=divisor;
+            }
+          maxl=(size_t)(sqrt((double)len))+1;
+          }
+      if (len>1) fct[nfct++].fct=len;
       }
-  if (len>1) fct[nfct++].fct=len;
-  }
 
-NOINLINE size_t twsize ()
-  {
-  size_t twsize=0, l1=1;
-  for (size_t k=0; k<nfct; ++k)
-    {
-    size_t ip=fct[k].fct, ido= length/(l1*ip);
-    twsize+=(ip-1)*(ido-1);
-    if (ip>11)
-      twsize+=ip;
-    l1*=ip;
-    }
-  return twsize;
-  }
-
-NOINLINE void comp_twiddle()
-  {
-  sincos_2pibyn twid(length);
-  size_t l1=1;
-  size_t memofs=0;
-  for (size_t k=0; k<nfct; ++k)
-    {
-    size_t ip=fct[k].fct, ido= length/(l1*ip);
-    fct[k].tw=mem.data()+memofs;
-    memofs+=(ip-1)*(ido-1);
-    for (size_t j=1; j<ip; ++j)
-      for (size_t i=1; i<ido; ++i)
+    NOINLINE size_t twsize() const
+      {
+      size_t twsize=0, l1=1;
+      for (size_t k=0; k<nfct; ++k)
         {
-        fct[k].tw[(j-1)*(ido-1)+i-1].r = twid[2*j*l1*i];
-        fct[k].tw[(j-1)*(ido-1)+i-1].i = twid[2*j*l1*i+1];
+        size_t ip=fct[k].fct, ido= length/(l1*ip);
+        twsize+=(ip-1)*(ido-1);
+        if (ip>11)
+          twsize+=ip;
+        l1*=ip;
         }
-    if (ip>11)
+      return twsize;
+      }
+
+    NOINLINE void comp_twiddle()
       {
-      fct[k].tws=mem.data()+memofs;
-      memofs+=ip;
-      for (size_t j=0; j<ip; ++j)
+      sincos_2pibyn twid(length);
+      size_t l1=1;
+      size_t memofs=0;
+      for (size_t k=0; k<nfct; ++k)
         {
-        fct[k].tws[j].r = twid[2*j*l1*ido];
-        fct[k].tws[j].i = twid[2*j*l1*ido+1];
+        size_t ip=fct[k].fct, ido= length/(l1*ip);
+        fct[k].tw=mem.data()+memofs;
+        memofs+=(ip-1)*(ido-1);
+        for (size_t j=1; j<ip; ++j)
+          for (size_t i=1; i<ido; ++i)
+            {
+            fct[k].tw[(j-1)*(ido-1)+i-1].r = twid[2*j*l1*i];
+            fct[k].tw[(j-1)*(ido-1)+i-1].i = twid[2*j*l1*i+1];
+            }
+        if (ip>11)
+          {
+          fct[k].tws=mem.data()+memofs;
+          memofs+=ip;
+          for (size_t j=0; j<ip; ++j)
+            {
+            fct[k].tws[j].r = twid[2*j*l1*ido];
+            fct[k].tws[j].i = twid[2*j*l1*ido+1];
+            }
+          }
+        l1*=ip;
         }
       }
-    l1*=ip;
-    }
-  }
 
-public:
+  public:
+    cfftp(size_t length_)
+      {
+      length=length_;
+      if (length==0) throw 42;
+      nfct=0;
+      if (length==1) return;
+      factorize();
+      size_t tws=twsize();
+      mem.resize(tws);
+      comp_twiddle();
+      }
+  };
 
-cfftp(size_t length_)
+class fftblue
   {
-  length=length_;
-  if (length==0) throw 42;
-  nfct=0;
-  if (length==1) return;
-  factorize();
-  size_t tws=twsize();
-  mem.resize(tws);
-  comp_twiddle();
-  }
+  private:
+    size_t n, n2;
+    cfftp plan;
+    arr<double> mem;
+    double *bk, *bkf;
 
-};
-
-struct fftblue
-  {
-  size_t n, n2;
-  cfftp plan;
-  arr<double> mem;
-  double *bk, *bkf;
-
-  fftblue(size_t length)
-    : n(length), n2(good_size(n*2-1)), plan(n2), mem(2*(n+n2)), bk(mem.data()), bkf(mem.data()+2*n)
-    {
-/* initialize b_k */
-  sincos_2pibyn tmp(2*n);
-  bk[0] = 1;
-  bk[1] = 0;
-
-  size_t coeff=0;
-  for (size_t m=1; m<n; ++m)
-    {
-    coeff+=2*m-1;
-    if (coeff>=2*n) coeff-=2*n;
-    bk[2*m  ] = tmp[2*coeff  ];
-    bk[2*m+1] = tmp[2*coeff+1];
-    }
-
-  /* initialize the zero-padded, Fourier transformed b_k. Add normalisation. */
-  double xn2 = 1./n2;
-  bkf[0] = bk[0]*xn2;
-  bkf[1] = bk[1]*xn2;
-  for (size_t m=2; m<2*n; m+=2)
-    {
-    bkf[m]   = bkf[2*n2-m]   = bk[m]   *xn2;
-    bkf[m+1] = bkf[2*n2-m+1] = bk[m+1] *xn2;
-    }
-  for (size_t m=2*n;m<=(2*n2-2*n+1);++m)
-    bkf[m]=0.;
-  plan.forward((dcmplx *)bkf,1.);
-    }
-
-template<typename T> NOINLINE
-void fftblue_fft(T c[], int isign, double fct)
-  {
-  arr<T> akf(2*n2);
-
-/* initialize a_k and FFT it */
-  if (isign>0)
-    for (size_t m=0; m<2*n; m+=2)
+    template<typename T> NOINLINE
+    void fft(T c[], int isign, double fct)
       {
-      akf[m]   = c[m]*bk[m]   - c[m+1]*bk[m+1];
-      akf[m+1] = c[m]*bk[m+1] + c[m+1]*bk[m];
-      }
-  else
-    for (size_t m=0; m<2*n; m+=2)
-      {
-      akf[m]   = c[m]*bk[m]   + c[m+1]*bk[m+1];
-      akf[m+1] =-c[m]*bk[m+1] + c[m+1]*bk[m];
-      }
-  for (size_t m=2*n; m<2*n2; ++m)
-    akf[m]=0.*c[0];
+      arr<T> akf(2*n2);
 
-  plan.forward ((cmplx<T> *)akf.data(),fct);
+    /* initialize a_k and FFT it */
+      if (isign>0)
+        for (size_t m=0; m<2*n; m+=2)
+          {
+          akf[m]   = c[m]*bk[m]   - c[m+1]*bk[m+1];
+          akf[m+1] = c[m]*bk[m+1] + c[m+1]*bk[m];
+          }
+      else
+        for (size_t m=0; m<2*n; m+=2)
+          {
+          akf[m]   = c[m]*bk[m]   + c[m+1]*bk[m+1];
+          akf[m+1] =-c[m]*bk[m+1] + c[m+1]*bk[m];
+          }
+      for (size_t m=2*n; m<2*n2; ++m)
+        akf[m]=0.*c[0];
 
-/* do the convolution */
-  if (isign>0)
-    for (size_t m=0; m<2*n2; m+=2)
-      {
-      T im = -akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
-      akf[m  ]  =  akf[m]*bkf[m]   + akf[m+1]*bkf[m+1];
-      akf[m+1]  = im;
-      }
-  else
-    for (size_t m=0; m<2*n2; m+=2)
-      {
-      T im = akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
-      akf[m  ]  = akf[m]*bkf[m]   - akf[m+1]*bkf[m+1];
-      akf[m+1]  = im;
+      plan.forward ((cmplx<T> *)akf.data(),fct);
+
+    /* do the convolution */
+      if (isign>0)
+        for (size_t m=0; m<2*n2; m+=2)
+          {
+          T im = -akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
+          akf[m  ]  =  akf[m]*bkf[m]   + akf[m+1]*bkf[m+1];
+          akf[m+1]  = im;
+          }
+      else
+        for (size_t m=0; m<2*n2; m+=2)
+          {
+          T im = akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
+          akf[m  ]  = akf[m]*bkf[m]   - akf[m+1]*bkf[m+1];
+          akf[m+1]  = im;
+          }
+
+    /* inverse FFT */
+      plan.backward ((cmplx<T> *)akf.data(),1.);
+
+    /* multiply by b_k */
+      if (isign>0)
+        for (size_t m=0; m<2*n; m+=2)
+          {
+          c[m]   = bk[m]  *akf[m] - bk[m+1]*akf[m+1];
+          c[m+1] = bk[m+1]*akf[m] + bk[m]  *akf[m+1];
+          }
+      else
+        for (size_t m=0; m<2*n; m+=2)
+          {
+          c[m]   = bk[m]  *akf[m] + bk[m+1]*akf[m+1];
+          c[m+1] =-bk[m+1]*akf[m] + bk[m]  *akf[m+1];
+          }
       }
 
-/* inverse FFT */
-  plan.backward ((cmplx<T> *)akf.data(),1.);
-
-/* multiply by b_k */
-  if (isign>0)
-    for (size_t m=0; m<2*n; m+=2)
+  public:
+    fftblue(size_t length)
+      : n(length), n2(good_size(n*2-1)), plan(n2), mem(2*(n+n2)),
+        bk(mem.data()), bkf(mem.data()+2*n)
       {
-      c[m]   = bk[m]  *akf[m] - bk[m+1]*akf[m+1];
-      c[m+1] = bk[m+1]*akf[m] + bk[m]  *akf[m+1];
-      }
-  else
-    for (size_t m=0; m<2*n; m+=2)
-      {
-      c[m]   = bk[m]  *akf[m] + bk[m+1]*akf[m+1];
-      c[m+1] =-bk[m+1]*akf[m] + bk[m]  *akf[m+1];
-      }
-  }
+      /* initialize b_k */
+      sincos_2pibyn tmp(2*n);
+      bk[0] = 1;
+      bk[1] = 0;
 
-template<typename T>
-void backward(T c[], double fct)
-  { fftblue_fft(c,1,fct); }
+      size_t coeff=0;
+      for (size_t m=1; m<n; ++m)
+        {
+        coeff+=2*m-1;
+        if (coeff>=2*n) coeff-=2*n;
+        bk[2*m  ] = tmp[2*coeff  ];
+        bk[2*m+1] = tmp[2*coeff+1];
+        }
 
-template<typename T>
-void forward(T c[], double fct)
-  { fftblue_fft(c,-1,fct); }
-};
+      /* initialize the zero-padded, Fourier transformed b_k. Add normalisation. */
+      double xn2 = 1./n2;
+      bkf[0] = bk[0]*xn2;
+      bkf[1] = bk[1]*xn2;
+      for (size_t m=2; m<2*n; m+=2)
+        {
+        bkf[m]   = bkf[2*n2-m]   = bk[m]   *xn2;
+        bkf[m+1] = bkf[2*n2-m+1] = bk[m+1] *xn2;
+        }
+      for (size_t m=2*n;m<=(2*n2-2*n+1);++m)
+        bkf[m]=0.;
+      plan.forward((dcmplx *)bkf,1.);
+      }
+
+    template<typename T> void backward(T c[], double fct)
+      { fft(c,1,fct); }
+
+    template<typename T> void forward(T c[], double fct)
+      { fft(c,-1,fct); }
+    };
 
 } // unnamed namespace
 
@@ -1181,19 +1187,17 @@ struct pocketfft_c
         packplan=make_unique<cfftp>(length);
       }
 
-template<typename T> void backward(T c[], double fct)
-  {
-  if (packplan)
-    return packplan->backward((dcmplx *)c,fct);
-  return blueplan->backward(c,fct);
-  }
+    template<typename T> void backward(T c[], double fct)
+      {
+      packplan ? packplan->backward((dcmplx *)c,fct)
+               : blueplan->backward(c,fct);
+      }
 
-template<typename T> void forward(T c[], double fct)
-  {
-  if (packplan)
-    return packplan->forward((dcmplx *)c,fct);
-  return blueplan->forward(c,fct);
-  }
+    template<typename T> void forward(T c[], double fct)
+      {
+      packplan ? packplan->forward((dcmplx *)c,fct)
+               : blueplan->forward(c,fct);
+      }
   };
 #define maxlen 8192
 
@@ -1249,6 +1253,7 @@ for (int x=0; x<1; ++x)
 
 int main()
   {
-  double *a=RALLOC(double,1234560);
-  test_complex<double,1>();
+//  test_complex<double,1>();
+//  test_complex<__m128d,2>();
+  test_complex<__m256d,4>();
   }

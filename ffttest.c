@@ -90,7 +90,7 @@ static int test_complex(void)
 int main(void)
   {
   int ret = 0;
-  ret = test_real();
+  //ret = test_real();
   ret += test_complex();
   return ret;
   }
