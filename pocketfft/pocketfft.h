@@ -45,22 +45,22 @@ int pocketfft_forward_r(pocketfft_plan_r plan, double c[], double fct);
 size_t pocketfft_length_r(pocketfft_plan_r plan);
 
 /* Experimental high-level interface */
-void pocketfft_c_sng_1D_fwd_inplace(uint64_t n, float *data);
-void pocketfft_c_sng_1D_bwd_inplace(uint64_t n, float *data);
-void pocketfft_c_dbl_1D_fwd_inplace(uint64_t n, double *data);
-void pocketfft_c_dbl_1D_bwd_inplace(uint64_t n, double *data);
-void pocketfft_c_sng_2D_fwd_inplace(uint64_t n1, uint64_t n2, float *data);
-void pocketfft_c_sng_2D_bwd_inplace(uint64_t n1, uint64_t n2, float *data);
-void pocketfft_c_dbl_2D_fwd_inplace(uint64_t n1, uint64_t n2, double *data);
-void pocketfft_c_dbl_2D_bwd_inplace(uint64_t n1, uint64_t n2, double *data);
+void pocketfft_c_sng_1D_fwd_inplace(uint64_t n, _Complex float *data);
+void pocketfft_c_sng_1D_bwd_inplace(uint64_t n, _Complex float *data);
+void pocketfft_c_dbl_1D_fwd_inplace(uint64_t n, _Complex double *data);
+void pocketfft_c_dbl_1D_bwd_inplace(uint64_t n, _Complex double *data);
+void pocketfft_c_sng_2D_fwd_inplace(uint64_t n1, uint64_t n2, _Complex float *data);
+void pocketfft_c_sng_2D_bwd_inplace(uint64_t n1, uint64_t n2, _Complex float *data);
+void pocketfft_c_dbl_2D_fwd_inplace(uint64_t n1, uint64_t n2, _Complex double *data);
+void pocketfft_c_dbl_2D_bwd_inplace(uint64_t n1, uint64_t n2, _Complex double *data);
 void pocketfft_c_sng_3D_fwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
-  float *data);
+  _Complex float *data);
 void pocketfft_c_sng_3D_bwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
-  float *data);
+  _Complex float *data);
 void pocketfft_c_dbl_3D_fwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
-  double *data);
+  _Complex double *data);
 void pocketfft_c_dbl_3D_bwd_inplace(uint64_t n1, uint64_t n2, uint64_t n3,
-  double *data);
+  _Complex double *data);
 
 #ifdef __cplusplus
 }
