@@ -6,17 +6,11 @@
 
 #ifdef __GNUC__
 #define NOINLINE __attribute__((noinline))
-#define WARN_UNUSED_RESULT __attribute__ ((warn_unused_result))
 #define restrict __restrict__
 #else
 #define NOINLINE
-#define WARN_UNUSED_RESULT
 #define restrict
 #endif
-#define RALLOC(type,num) \
-  ((type *)aligned_alloc(64,(num)*sizeof(type)))
-#define DEALLOC(ptr) \
-  do { free(ptr); (ptr)=NULL; } while(0)
 
 using namespace std;
 
@@ -30,20 +24,25 @@ template<typename T> struct arr
     T *p;
     size_t sz;
 
+    static T *ralloc(size_t num)
+      { return (T *)aligned_alloc(64,num*sizeof(T)); }
+    static void dealloc(T *ptr)
+      { free(ptr); }
+
   public:
     arr() : p(0), sz(0) {}
-    arr(size_t n) : p(RALLOC(T, n)), sz(n)
+    arr(size_t n) : p(ralloc(n)), sz(n)
       {
       if ((!p) && (n!=0))
         throw OOM();
       }
-    ~arr() { DEALLOC(p); }
+    ~arr() { dealloc(p); }
 
     void resize(size_t n)
       {
       if (n==sz) return;
-      DEALLOC(p);
-      p = RALLOC(T, n);
+      dealloc(p);
+      p = ralloc(n);
       sz = n;
       }
 
@@ -306,8 +305,6 @@ template<typename T> struct cmplx {
     { return cmplx(r+other.r, i+other.i); }
   cmplx operator- (const cmplx &other) const
     { return cmplx(r-other.r, i-other.i); }
-  template<bool bwd> cmplx cond_conj() const
-    { return bwd ? *this : cmplx(r, -i);}
   cmplx operator*(double f) const
     { return {r*f, i*f}; }
   template<typename T2> auto operator* (const cmplx<T2> &other) const
@@ -331,12 +328,10 @@ template<typename T> void ROT90(cmplx<T> &a)
   { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
 template<typename T> void ROTM90(cmplx<T> &a)
   { auto tmp_=-a.r; a.r=a.i; a.i=tmp_; }
+
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define WA(x,i) wa[(i)-1+(x)*(ido-1)]
-
-/* a = b*c */
-#define MULPMSIGNC(a,b,c) { a.r=b.r*c.r-sign*b.i*c.i; a.i=b.r*c.i+sign*b.i*c.r; }
 
 using dcmplx = cmplx<double>;
 
@@ -402,8 +397,8 @@ template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const
         CH(i,k,u1) = bwd ? da*WA(u1-1,i) : da.mulconj(WA(u1-1,i)); \
         CH(i,k,u2) = bwd ? db*WA(u2-1,i) : db.mulconj(WA(u2-1,i)); \
         }
-template<typename T, bool bwd> void pass3 (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
+template<typename T, bool bwd> NOINLINE void pass3 (size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const dcmplx * restrict wa)
   {
   constexpr size_t cdim=3;
   constexpr double tw1r=-0.5, tw1i= (bwd ? 1.: -1.) * 0.86602540378443864676;
@@ -429,8 +424,8 @@ template<typename T, bool bwd> void pass3 (size_t ido, size_t l1, const T * rest
       }
   }
 
-template<typename T, bool bwd> NOINLINE void pass4 (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
+template<typename T, bool bwd> NOINLINE void pass4 (size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const dcmplx * restrict wa)
   {
   constexpr size_t cdim=4;
 
@@ -500,8 +495,8 @@ template<typename T, bool bwd> NOINLINE void pass4 (size_t ido, size_t l1, const
         CH(i,k,u1) = bwd ? WA(u1-1,i)*da : da.mulconj(WA(u1-1,i)); \
         CH(i,k,u2) = bwd ? WA(u2-1,i)*db : db.mulconj(WA(u2-1,i)); \
         }
-template<typename T, bool bwd> NOINLINE void pass5 (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
+template<typename T, bool bwd> NOINLINE void pass5 (size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const dcmplx * restrict wa)
   {
   constexpr size_t cdim=5;
   constexpr double tw1r= 0.3090169943749474241,
@@ -560,8 +555,8 @@ template<typename T, bool bwd> NOINLINE void pass5 (size_t ido, size_t l1, const
         CH(i,k,u2) = bwd ? WA(u2-1,i)*db : db.mulconj(WA(u2-1,i)); \
         }
 
-template<typename T, bool bwd>NOINLINE void pass7(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
+template<typename T, bool bwd> NOINLINE void pass7(size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const dcmplx * restrict wa)
   {
   constexpr size_t cdim=7;
   constexpr double tw1r= 0.623489801858733530525,
@@ -626,8 +621,8 @@ template<typename T, bool bwd>NOINLINE void pass7(size_t ido, size_t l1, const T
         CH(i,k,u2) = bwd ? WA(u2-1,i)*db : db.mulconj(WA(u2-1,i)); \
         }
 
-template<typename T, bool bwd> NOINLINE void pass11 (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
+template<typename T, bool bwd> NOINLINE void pass11 (size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const dcmplx * restrict wa)
   {
   const size_t cdim=11;
   const double tw1r =        0.8412535328311811688618,
@@ -678,18 +673,18 @@ template<typename T, bool bwd> NOINLINE void pass11 (size_t ido, size_t l1, cons
 #define CX2(a,b) cc[(a)+idl1*(b)]
 #define CH2(a,b) ch[(a)+idl1*(b)]
 
-template<typename T> NOINLINE void passg (size_t ido, size_t ip, size_t l1,
-  T * restrict cc, T * restrict ch, const dcmplx * restrict wa,
-  const dcmplx * restrict csarr, const int sign)
+template<typename T, bool bwd> NOINLINE void passg (size_t ido, size_t ip,
+  size_t l1, T * restrict cc, T * restrict ch, const dcmplx * restrict wa,
+  const dcmplx * restrict csarr)
   {
   const size_t cdim=ip;
   size_t ipph = (ip+1)/2;
   size_t idl1 = ido*l1;
 
   arr<dcmplx> wal(ip);
-  wal[0]=(dcmplx){1.,0.};
+  wal[0] = dcmplx(1., 0.);
   for (size_t i=1; i<ip; ++i)
-    wal[i]=(dcmplx){csarr[i].r,sign*csarr[i].i};
+    wal[i]=dcmplx(csarr[i].r,bwd ? csarr[i].i : -csarr[i].i);
 
   for (size_t k=0; k<l1; ++k)
     for (size_t i=0; i<ido; ++i)
@@ -767,9 +762,9 @@ template<typename T> NOINLINE void passg (size_t ido, size_t ip, size_t l1,
           T x1, x2;
           PMC(x1,x2,CX(i,k,j),CX(i,k,jc));
           size_t idij=(j-1)*(ido-1)+i-1;
-          MULPMSIGNC (CX(i,k,j),wa[idij],x1)
+          CX(i,k,j) = bwd ? x1*wa[idij] : x1.mulconj(wa[idij]);
           idij=(jc-1)*(ido-1)+i-1;
-          MULPMSIGNC (CX(i,k,jc),wa[idij],x2)
+          CX(i,k,jc) = bwd ? x2*wa[idij] : x2.mulconj(wa[idij]);
           }
         }
     }
@@ -779,7 +774,7 @@ template<typename T> NOINLINE void passg (size_t ido, size_t ip, size_t l1,
 #undef CX2
 #undef CX
 
-template<typename T> void pass_all(T c[], double fact,
+template<typename T> NOINLINE void pass_all(T c[], double fact,
   const int sign)
   {
   if (length==1) return;
@@ -812,7 +807,8 @@ template<typename T> void pass_all(T c[], double fact,
              : pass11<T, false> (ido, l1, p1, p2, fct[k1].tw);
     else
       {
-      passg<T>(ido, ip, l1, p1, p2, fct[k1].tw, fct[k1].tws, sign);
+      sign>0 ? passg<T, true>(ido, ip, l1, p1, p2, fct[k1].tw, fct[k1].tws)
+             : passg<T, false>(ido, ip, l1, p1, p2, fct[k1].tw, fct[k1].tws);
       swap(p1,p2);
       }
     swap(p1,p2);
@@ -822,23 +818,15 @@ template<typename T> void pass_all(T c[], double fact,
     {
     if (fact!=1.)
       for (size_t i=0; i<length; ++i)
-        {
-        c[i].r = ch[i].r*fact;
-        c[i].i = ch[i].i*fact;
-        }
+        c[i] = ch[i]*fact;
     else
       memcpy (c,p1,length*sizeof(T));
     }
   else
     if (fact!=1.)
       for (size_t i=0; i<length; ++i)
-        {
-        c[i].r *= fact;
-        c[i].i *= fact;
-        }
+        c[i] *= fact;
   }
-
-#undef MULPMSIGNC
 
 #undef WA
 #undef CC
@@ -927,7 +915,7 @@ template<typename T> void pass_all(T c[], double fact,
       }
 
   public:
-    cfftp(size_t length_)
+    NOINLINE cfftp(size_t length_)
       {
       length=length_;
       if (length==0) throw 42;
@@ -969,7 +957,7 @@ class fftblue
       for (size_t m=2*n; m<2*n2; ++m)
         akf[m]=0.*c[0];
 
-      plan.forward ((cmplx<T> *)akf.data(),fct);
+      plan.forward ((cmplx<T> *)akf.data(),1.);
 
     /* do the convolution */
       if (isign>0)
@@ -994,19 +982,19 @@ class fftblue
       if (isign>0)
         for (size_t m=0; m<2*n; m+=2)
           {
-          c[m]   = bk[m]  *akf[m] - bk[m+1]*akf[m+1];
-          c[m+1] = bk[m+1]*akf[m] + bk[m]  *akf[m+1];
+          c[m]   = fct*(bk[m]  *akf[m] - bk[m+1]*akf[m+1]);
+          c[m+1] = fct*(bk[m+1]*akf[m] + bk[m]  *akf[m+1]);
           }
       else
         for (size_t m=0; m<2*n; m+=2)
           {
-          c[m]   = bk[m]  *akf[m] + bk[m+1]*akf[m+1];
-          c[m+1] =-bk[m+1]*akf[m] + bk[m]  *akf[m+1];
+          c[m]   = fct*(bk[m]  *akf[m] + bk[m+1]*akf[m+1]);
+          c[m+1] = fct*(-bk[m+1]*akf[m] + bk[m]  *akf[m+1]);
           }
       }
 
   public:
-    fftblue(size_t length)
+    NOINLINE fftblue(size_t length)
       : n(length), n2(good_size(n*2-1)), plan(n2), mem(2*(n+n2)),
         bk(mem.data()), bkf(mem.data()+2*n)
       {
@@ -1054,21 +1042,21 @@ struct pocketfft_c
     unique_ptr<fftblue> blueplan;
 
   public:
-    pocketfft_c(size_t length) : packplan(nullptr), blueplan(nullptr)
+    NOINLINE pocketfft_c(size_t length) : packplan(nullptr), blueplan(nullptr)
       {
       if (length==0) throw 42;
       if ((length<50) || (largest_prime_factor(length)<=sqrt(length)))
         {
-        packplan=make_unique<cfftp>(length);
+        packplan=unique_ptr<cfftp>(new cfftp(length));
         return;
         }
       double comp1 = cost_guess(length);
       double comp2 = 2*cost_guess(good_size(2*length-1));
       comp2*=1.5; /* fudge factor that appears to give good overall performance */
       if (comp2<comp1) // use Bluestein
-        blueplan=make_unique<fftblue>(length);
+        blueplan=unique_ptr<fftblue>(new fftblue(length));
       else
-        packplan=make_unique<cfftp>(length);
+        packplan=unique_ptr<cfftp>(new cfftp(length));
       }
 
     template<typename T> void backward(T c[], double fct)
@@ -1137,7 +1125,7 @@ for (int x=0; x<1; ++x)
 
 int main()
   {
-  //test_complex<double,1>();
+  test_complex<double,1>();
   //test_complex<__m128d,2>();
-  test_complex<__m256d,4>();
+  //test_complex<__m256d,4>();
   }
