@@ -306,13 +306,26 @@ template<typename T> struct cmplx {
     { return cmplx(r+other.r, i+other.i); }
   cmplx operator- (const cmplx &other) const
     { return cmplx(r-other.r, i-other.i); }
-  template<typename T2> auto operator* (const cmplx<T2> &other) const -> cmplx<decltype(r+other.r)>
+  template<bool bwd> cmplx cond_conj() const
+    { return bwd ? *this : cmplx(r, -i);}
+  cmplx operator*(double f) const
+    { return {r*f, i*f}; }
+  template<typename T2> auto operator* (const cmplx<T2> &other) const
+    -> cmplx<decltype(r+other.r)>
     {
     return {r*other.r-i*other.i, r*other.i + i*other.r};
     }
+  template<typename T2> auto mulconj (const cmplx<T2> &other) const
+    -> cmplx<decltype(r+other.r)>
+    {
+    return {r*other.r+i*other.i, i*other.r - r*other.i};
+    }
 };
-template<typename T> void PMC(cmplx<T> &a, cmplx<T> &b, const cmplx<T> &c, const cmplx<T> &d)
+template<typename T> void PMC(cmplx<T> &a, cmplx<T> &b,
+  const cmplx<T> &c, const cmplx<T> &d)
   { a = c+d; b = c-d; }
+template<typename T> cmplx<T> conj(const cmplx<T> &a)
+  { return {a.r, -a.i}; }
 
 template<typename T> void ROT90(cmplx<T> &a)
   { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
@@ -322,10 +335,6 @@ template<typename T> void ROTM90(cmplx<T> &a)
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define WA(x,i) wa[(i)-1+(x)*(ido-1)]
 
-/* a = conj(b)*c*/
-#define A_EQ_CB_MUL_C(a,b,c) { a.r=b.r*c.r+b.i*c.i; a.i=b.r*c.i-b.i*c.r; }
-
-#define PMSIGNC(a,b,c,d) { a.r=c.r+sign*d.r; a.i=c.i+sign*d.i; b.r=c.r-sign*d.r; b.i=c.i-sign*d.i; }
 /* a = b*c */
 #define MULPMSIGNC(a,b,c) { a.r=b.r*c.r-sign*b.i*c.i; a.i=b.r*c.i+sign*b.i*c.r; }
 
@@ -354,19 +363,20 @@ template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
-      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k));
+      {
+      CH(0,k,0) = CC(0,0,k)+CC(0,1,k);
+      CH(0,k,1) = CC(0,0,k)-CC(0,1,k);
+      }
   else
     for (size_t k=0; k<l1; ++k)
       {
-      PMC (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(0,1,k));
+      CH(0,k,0) = CC(0,0,k)+CC(0,1,k);
+      CH(0,k,1) = CC(0,0,k)-CC(0,1,k);
       for (size_t i=1; i<ido; ++i)
         {
-        T t;
-        PMC (CH(i,k,0),t,CC(i,0,k),CC(i,1,k));
-        if (bwd)
-          CH(i,k,1) = WA(0,i)*t;
-        else
-          A_EQ_CB_MUL_C (CH(i,k,1),WA(0,i),t)
+        CH(i,k,0) = CC(i,0,k)+CC(i,1,k);
+        CH(i,k,1) = bwd ? (CC(i,0,k)-CC(i,1,k))*WA(0,i)
+                        : (CC(i,0,k)-CC(i,1,k)).mulconj(WA(0,i));
         }
       }
   }
@@ -374,34 +384,29 @@ template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const
 #define PREP3(idx) \
         T t0 = CC(idx,0,k), t1, t2; \
         PMC (t1,t2,CC(idx,1,k),CC(idx,2,k)); \
-        CH(idx,k,0).r=t0.r+t1.r; \
-        CH(idx,k,0).i=t0.i+t1.i;
+        CH(idx,k,0)=t0+t1;
 #define PARTSTEP3a(u1,u2,twr,twi) \
         { \
         T ca,cb; \
-        ca.r=t0.r+twr*t1.r; \
-        ca.i=t0.i+twr*t1.i; \
-        cb.i=twi*t2.r; \
-        cb.r=-(twi*t2.i); \
+        ca=t0+t1*twr; \
+        cb=t2*twi; ROT90(cb); \
         PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) ;\
         }
 
 #define PARTSTEP3b(u1,u2,twr,twi) \
         { \
         T ca,cb,da,db; \
-        ca.r=t0.r+twr*t1.r; \
-        ca.i=t0.i+twr*t1.i; \
-        cb.i=twi*t2.r; \
-        cb.r=-(twi*t2.i); \
+        ca=t0+t1*twr; \
+        cb=t2*twi; ROT90(cb); \
         PMC(da,db,ca,cb); \
-        CH(i,k,u1) = WA(u1-1,i)*da; \
-        CH(i,k,u2) = WA(u2-1,i)*db; \
+        CH(i,k,u1) = bwd ? da*WA(u1-1,i) : da.mulconj(WA(u1-1,i)); \
+        CH(i,k,u2) = bwd ? db*WA(u2-1,i) : db.mulconj(WA(u2-1,i)); \
         }
-template<typename T> void pass3b (size_t ido, size_t l1, const T * restrict cc,
+template<typename T, bool bwd> void pass3 (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const dcmplx * restrict wa)
   {
   constexpr size_t cdim=3;
-  constexpr double tw1r=-0.5, tw1i= 0.86602540378443864676;
+  constexpr double tw1r=-0.5, tw1i= (bwd ? 1.: -1.) * 0.86602540378443864676;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -423,48 +428,11 @@ template<typename T> void pass3b (size_t ido, size_t l1, const T * restrict cc,
         }
       }
   }
-#define PARTSTEP3f(u1,u2,twr,twi) \
-        { \
-        T ca,cb,da,db; \
-        ca.r=t0.r+twr*t1.r; \
-        ca.i=t0.i+twr*t1.i; \
-        cb.i=twi*t2.r; \
-        cb.r=-(twi*t2.i); \
-        PMC(da,db,ca,cb); \
-        A_EQ_CB_MUL_C (CH(i,k,u1),WA(u1-1,i),da) \
-        A_EQ_CB_MUL_C (CH(i,k,u2),WA(u2-1,i),db) \
-        }
-template<typename T> NOINLINE void pass3f (size_t ido, size_t l1, const T * restrict cc,
+
+template<typename T, bool bwd> NOINLINE void pass4 (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const dcmplx * restrict wa)
   {
-  const size_t cdim=3;
-  const double tw1r=-0.5, tw1i= -0.86602540378443864676;
-
-  if (ido==1)
-    for (size_t k=0; k<l1; ++k)
-      {
-      PREP3(0)
-      PARTSTEP3a(1,2,tw1r,tw1i)
-      }
-  else
-    for (size_t k=0; k<l1; ++k)
-      {
-      {
-      PREP3(0)
-      PARTSTEP3a(1,2,tw1r,tw1i)
-      }
-      for (size_t i=1; i<ido; ++i)
-        {
-        PREP3(i)
-        PARTSTEP3f(1,2,tw1r,tw1i)
-        }
-      }
-  }
-
-template<typename T> NOINLINE void pass4b (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
-  {
-  const size_t cdim=4;
+  constexpr size_t cdim=4;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -472,7 +440,7 @@ template<typename T> NOINLINE void pass4b (size_t ido, size_t l1, const T * rest
       T t1, t2, t3, t4;
       PMC(t2,t1,CC(0,0,k),CC(0,2,k));
       PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      ROT90(t4);
+      bwd ? ROT90(t4) : ROTM90(t4);
       PMC(CH(0,k,0),CH(0,k,2),t2,t3);
       PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
@@ -483,7 +451,7 @@ template<typename T> NOINLINE void pass4b (size_t ido, size_t l1, const T * rest
       T t1, t2, t3, t4;
       PMC(t2,t1,CC(0,0,k),CC(0,2,k));
       PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      ROT90(t4);
+      bwd ? ROT90(t4) : ROTM90(t4);
       PMC(CH(0,k,0),CH(0,k,2),t2,t3);
       PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
@@ -493,55 +461,13 @@ template<typename T> NOINLINE void pass4b (size_t ido, size_t l1, const T * rest
         T cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
         PMC(t2,t1,cc0,cc2);
         PMC(t3,t4,cc1,cc3);
-        ROT90(t4);
+        bwd ? ROT90(t4) : ROTM90(t4);
         dcmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
         PMC(CH(i,k,0),c3,t2,t3);
         PMC(c2,c4,t1,t4);
-        CH(i,k,1) = wa0*c2;
-        CH(i,k,2) = wa1*c3;
-        CH(i,k,3) = wa2*c4;
-        }
-      }
-  }
-template<typename T> NOINLINE void pass4f (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
-  {
-  const size_t cdim=4;
-
-  if (ido==1)
-    for (size_t k=0; k<l1; ++k)
-      {
-      T t1, t2, t3, t4;
-      PMC(t2,t1,CC(0,0,k),CC(0,2,k));
-      PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      ROTM90(t4);
-      PMC(CH(0,k,0),CH(0,k,2),t2,t3);
-      PMC(CH(0,k,1),CH(0,k,3),t1,t4);
-      }
-  else
-    for (size_t k=0; k<l1; ++k)
-      {
-      {
-      T t1, t2, t3, t4;
-      PMC(t2,t1,CC(0,0,k),CC(0,2,k));
-      PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      ROTM90(t4);
-      PMC(CH(0,k,0),CH(0,k,2),t2,t3);
-      PMC (CH(0,k,1),CH(0,k,3),t1,t4);
-      }
-      for (size_t i=1; i<ido; ++i)
-        {
-        T c2, c3, c4, t1, t2, t3, t4;
-        T cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
-        PMC(t2,t1,cc0,cc2);
-        PMC(t3,t4,cc1,cc3);
-        ROTM90(t4);
-        dcmplx wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
-        PMC(CH(i,k,0),c3,t2,t3);
-        PMC(c2,c4,t1,t4);
-        A_EQ_CB_MUL_C (CH(i,k,1),wa0,c2)
-        A_EQ_CB_MUL_C (CH(i,k,2),wa1,c3)
-        A_EQ_CB_MUL_C (CH(i,k,3),wa2,c4)
+        CH(i,k,1) = bwd ? wa0*c2 : c2.mulconj(wa0);
+        CH(i,k,2) = bwd ? wa1*c3 : c3.mulconj(wa1);
+        CH(i,k,3) = bwd ? wa2*c4 : c4.mulconj(wa2);
         }
       }
   }
@@ -571,17 +497,17 @@ template<typename T> NOINLINE void pass4f (size_t ido, size_t l1, const T * rest
         cb.i=twai*t4.r twbi*t3.r; \
         cb.r=-(twai*t4.i twbi*t3.i); \
         PMC(da,db,ca,cb); \
-        CH(i,k,u1) = WA(u1-1,i)*da; \
-        CH(i,k,u2) = WA(u2-1,i)*db; \
+        CH(i,k,u1) = bwd ? WA(u1-1,i)*da : da.mulconj(WA(u1-1,i)); \
+        CH(i,k,u2) = bwd ? WA(u2-1,i)*db : db.mulconj(WA(u2-1,i)); \
         }
-template<typename T> NOINLINE void pass5b (size_t ido, size_t l1, const T * restrict cc,
+template<typename T, bool bwd> NOINLINE void pass5 (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const dcmplx * restrict wa)
   {
-  const size_t cdim=5;
-  const double tw1r= 0.3090169943749474241,
-               tw1i= 0.95105651629515357212,
-               tw2r= -0.8090169943749474241,
-               tw2i= 0.58778525229247312917;
+  constexpr size_t cdim=5;
+  constexpr double tw1r= 0.3090169943749474241,
+                   tw1i= (bwd ? 1.: -1.) * 0.95105651629515357212,
+                   tw2r= -0.8090169943749474241,
+                   tw2i= (bwd ? 1.: -1.) * 0.58778525229247312917;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -603,49 +529,6 @@ template<typename T> NOINLINE void pass5b (size_t ido, size_t l1, const T * rest
         PREP5(i)
         PARTSTEP5b(1,4,tw1r,tw2r,+tw1i,+tw2i)
         PARTSTEP5b(2,3,tw2r,tw1r,+tw2i,-tw1i)
-        }
-      }
-  }
-#define PARTSTEP5f(u1,u2,twar,twbr,twai,twbi) \
-        { \
-        T ca,cb,da,db; \
-        ca.r=t0.r+twar*t1.r+twbr*t2.r; \
-        ca.i=t0.i+twar*t1.i+twbr*t2.i; \
-        cb.i=twai*t4.r twbi*t3.r; \
-        cb.r=-(twai*t4.i twbi*t3.i); \
-        PMC(da,db,ca,cb); \
-        A_EQ_CB_MUL_C (CH(i,k,u1),WA(u1-1,i),da) \
-        A_EQ_CB_MUL_C (CH(i,k,u2),WA(u2-1,i),db) \
-        }
-template<typename T> NOINLINE void pass5f (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa)
-  {
-  const size_t cdim=5;
-  const double tw1r= 0.3090169943749474241,
-               tw1i= -0.95105651629515357212,
-               tw2r= -0.8090169943749474241,
-               tw2i= -0.58778525229247312917;
-
-  if (ido==1)
-    for (size_t k=0; k<l1; ++k)
-      {
-      PREP5(0)
-      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
-      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
-      }
-  else
-    for (size_t k=0; k<l1; ++k)
-      {
-      {
-      PREP5(0)
-      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
-      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
-      }
-      for (size_t i=1; i<ido; ++i)
-        {
-        PREP5(i)
-        PARTSTEP5f(1,4,tw1r,tw2r,+tw1i,+tw2i)
-        PARTSTEP5f(2,3,tw2r,tw1r,+tw2i,-tw1i)
         }
       }
   }
@@ -673,20 +556,20 @@ template<typename T> NOINLINE void pass5f (size_t ido, size_t l1, const T * rest
         { \
         T da,db; \
         PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,da,db) \
-        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
-        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        CH(i,k,u1) = bwd ? WA(u1-1,i)*da : da.mulconj(WA(u1-1,i)); \
+        CH(i,k,u2) = bwd ? WA(u2-1,i)*db : db.mulconj(WA(u2-1,i)); \
         }
 
-template<typename T>NOINLINE void pass7(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa, const int sign)
+template<typename T, bool bwd>NOINLINE void pass7(size_t ido, size_t l1, const T * restrict cc,
+  T * restrict ch, const dcmplx * restrict wa)
   {
-  const size_t cdim=7;
-  const double tw1r= 0.623489801858733530525,
-               tw1i= sign * 0.7818314824680298087084,
-               tw2r= -0.222520933956314404289,
-               tw2i= sign * 0.9749279121818236070181,
-               tw3r= -0.9009688679024191262361,
-               tw3i= sign * 0.4338837391175581204758;
+  constexpr size_t cdim=7;
+  constexpr double tw1r= 0.623489801858733530525,
+                   tw1i= (bwd ? 1. : -1.) * 0.7818314824680298087084,
+                   tw2r= -0.222520933956314404289,
+                   tw2i= (bwd ? 1. : -1.) * 0.9749279121818236070181,
+                   tw3r= -0.9009688679024191262361,
+                   tw3i= (bwd ? 1. : -1.) * 0.4338837391175581204758;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -727,9 +610,8 @@ template<typename T>NOINLINE void pass7(size_t ido, size_t l1, const T * restric
 
 #define PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,out1,out2) \
         { \
-        T ca,cb; \
-        ca.r=t1.r+x1*t2.r+x2*t3.r+x3*t4.r+x4*t5.r+x5*t6.r; \
-        ca.i=t1.i+x1*t2.i+x2*t3.i+x3*t4.i+x4*t5.i+x5*t6.i; \
+        T ca = t1 + t2*x1 + t3*x2 + t4*x3 + t5*x4 +t6*x5, \
+          cb; \
         cb.i=y1*t11.r y2*t10.r y3*t9.r y4*t8.r y5*t7.r; \
         cb.r=-(y1*t11.i y2*t10.i y3*t9.i y4*t8.i y5*t7.i ); \
         PMC(out1,out2,ca,cb); \
@@ -740,24 +622,24 @@ template<typename T>NOINLINE void pass7(size_t ido, size_t l1, const T * restric
         { \
         T da,db; \
         PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,da,db) \
-        MULPMSIGNC (CH(i,k,u1),WA(u1-1,i),da) \
-        MULPMSIGNC (CH(i,k,u2),WA(u2-1,i),db) \
+        CH(i,k,u1) = bwd ? WA(u1-1,i)*da : da.mulconj(WA(u1-1,i)); \
+        CH(i,k,u2) = bwd ? WA(u2-1,i)*db : db.mulconj(WA(u2-1,i)); \
         }
 
-template<typename T> NOINLINE void pass11 (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const dcmplx * restrict wa, const int sign)
+template<typename T, bool bwd> NOINLINE void pass11 (size_t ido, size_t l1, const T * restrict cc,
+  T * restrict ch, const dcmplx * restrict wa)
   {
   const size_t cdim=11;
   const double tw1r =        0.8412535328311811688618,
-               tw1i = sign * 0.5406408174555975821076,
+               tw1i = (bwd ? 1. : -1.) * 0.5406408174555975821076,
                tw2r =        0.4154150130018864255293,
-               tw2i = sign * 0.9096319953545183714117,
+               tw2i = (bwd ? 1. : -1.) * 0.9096319953545183714117,
                tw3r =       -0.1423148382732851404438,
-               tw3i = sign * 0.9898214418809327323761,
+               tw3i = (bwd ? 1. : -1.) * 0.9898214418809327323761,
                tw4r =       -0.6548607339452850640569,
-               tw4i = sign * 0.755749574354258283774,
+               tw4i = (bwd ? 1. : -1.) * 0.755749574354258283774,
                tw5r =       -0.9594929736144973898904,
-               tw5i = sign * 0.2817325568414296977114;
+               tw5i = (bwd ? 1. : -1.) * 0.2817325568414296977114;
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -911,22 +793,26 @@ template<typename T> void pass_all(T c[], double fact,
     size_t l2=ip*l1;
     size_t ido = length/l2;
     if     (ip==4)
-      sign>0 ? pass4b (ido, l1, p1, p2, fct[k1].tw)
-             : pass4f (ido, l1, p1, p2, fct[k1].tw);
+      sign>0 ? pass4<T, true> (ido, l1, p1, p2, fct[k1].tw)
+             : pass4<T, false> (ido, l1, p1, p2, fct[k1].tw);
     else if(ip==2)
       sign>0 ? pass2<T, true>(ido, l1, p1, p2, fct[k1].tw)
              : pass2<T, false>(ido, l1, p1, p2, fct[k1].tw);
     else if(ip==3)
-      sign>0 ? pass3b (ido, l1, p1, p2, fct[k1].tw)
-             : pass3f (ido, l1, p1, p2, fct[k1].tw);
+      sign>0 ? pass3<T, true> (ido, l1, p1, p2, fct[k1].tw)
+             : pass3<T, false> (ido, l1, p1, p2, fct[k1].tw);
     else if(ip==5)
-      sign>0 ? pass5b (ido, l1, p1, p2, fct[k1].tw)
-             : pass5f (ido, l1, p1, p2, fct[k1].tw);
-    else if(ip==7)  pass7 (ido, l1, p1, p2, fct[k1].tw, sign);
-    else if(ip==11) pass11(ido, l1, p1, p2, fct[k1].tw, sign);
+      sign>0 ? pass5<T, true> (ido, l1, p1, p2, fct[k1].tw)
+             : pass5<T, false> (ido, l1, p1, p2, fct[k1].tw);
+    else if(ip==7)
+      sign>0 ? pass7<T, true> (ido, l1, p1, p2, fct[k1].tw)
+             : pass7<T, false> (ido, l1, p1, p2, fct[k1].tw);
+    else if(ip==11)
+      sign>0 ? pass11<T, true> (ido, l1, p1, p2, fct[k1].tw)
+             : pass11<T, false> (ido, l1, p1, p2, fct[k1].tw);
     else
       {
-      passg(ido, ip, l1, p1, p2, fct[k1].tw, fct[k1].tws, sign);
+      passg<T>(ido, ip, l1, p1, p2, fct[k1].tw, fct[k1].tws, sign);
       swap(p1,p2);
       }
     swap(p1,p2);
@@ -952,8 +838,6 @@ template<typename T> void pass_all(T c[], double fact,
         }
   }
 
-#undef PMSIGNC
-#undef A_EQ_CB_MUL_C
 #undef MULPMSIGNC
 
 #undef WA
@@ -1189,13 +1073,13 @@ struct pocketfft_c
 
     template<typename T> void backward(T c[], double fct)
       {
-      packplan ? packplan->backward((dcmplx *)c,fct)
+      packplan ? packplan->backward((cmplx<T> *)c,fct)
                : blueplan->backward(c,fct);
       }
 
     template<typename T> void forward(T c[], double fct)
       {
-      packplan ? packplan->forward((dcmplx *)c,fct)
+      packplan ? packplan->forward((cmplx<T> *)c,fct)
                : blueplan->forward(c,fct);
       }
   };
@@ -1253,7 +1137,7 @@ for (int x=0; x<1; ++x)
 
 int main()
   {
-//  test_complex<double,1>();
-//  test_complex<__m128d,2>();
+  //test_complex<double,1>();
+  //test_complex<__m128d,2>();
   test_complex<__m256d,4>();
   }
