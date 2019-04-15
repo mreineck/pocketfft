@@ -239,16 +239,15 @@ class sincos_2pibyn
 NOINLINE size_t largest_prime_factor (size_t n)
   {
   size_t res=1;
-  size_t tmp;
-  while (((tmp=(n>>1))<<1)==n)
-    { res=2; n=tmp; }
+  while ((n&1)==0)
+    { res=2; n>>=1; }
 
   size_t limit=size_t(sqrt(n+0.01));
   for (size_t x=3; x<=limit; x+=2)
-  while (((tmp=(n/x))*x)==n)
+  while ((n/x)*x==n)
     {
     res=x;
-    n=tmp;
+    n/=x;
     limit=size_t(sqrt(n+0.01));
     }
   if (n>1) res=n;
@@ -261,16 +260,15 @@ NOINLINE double cost_guess (size_t n)
   const double lfp=1.1; // penalty for non-hardcoded larger factors
   size_t ni=n;
   double result=0.;
-  size_t tmp;
-  while (((tmp=(n>>1))<<1)==n)
-    { result+=2; n=tmp; }
+  while ((n&1)==0)
+    { result+=2; n>>=1; }
 
   size_t limit=size_t(sqrt(n+0.01));
   for (size_t x=3; x<=limit; x+=2)
-  while ((tmp=(n/x))*x==n)
+  while ((n/x)*x==n)
     {
     result+= (x<=5) ? x : lfp*x; // penalize larger prime factors
-    n=tmp;
+    n/=x;
     limit=size_t(sqrt(n+0.01));
     }
   if (n>1) result+=(n<=5) ? n : lfp*n;
@@ -281,7 +279,7 @@ NOINLINE double cost_guess (size_t n)
 /* returns the smallest composite of 2, 3, 5, 7 and 11 which is >= n */
 NOINLINE size_t good_size(size_t n)
   {
-  if (n<=6) return n;
+  if (n<=12) return n;
 
   size_t bestfac=2*n;
   for (size_t f2=1; f2<bestfac; f2*=2)
@@ -339,8 +337,6 @@ template<typename T> void ROTM90(cmplx<T> &a)
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define WA(x,i) wa[(i)-1+(x)*(ido-1)]
 
-using dcmplx = cmplx<double>;
-
 constexpr size_t NFCT=25;
 
 template<typename T0> class cfftp
@@ -356,6 +352,12 @@ template<typename T0> class cfftp
     size_t length, nfct;
     arr<cmplx<T0>> mem;
     fctdata fct[NFCT];
+
+    void add_factor(size_t factor)
+      {
+      if (nfct>=NFCT) throw OOM();
+      fct[nfct++].fct = factor;
+      }
 
 template<typename T, bool bwd> NOINLINE void pass2 (size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const cmplx<T0> * restrict wa)
@@ -782,11 +784,11 @@ template<typename T> NOINLINE void pass_all(T c[], T0 fact,
   const int sign)
   {
   if (length==1) return;
-  size_t l1=1, nf=nfct;
+  size_t l1=1;
   arr<T> ch(length);
   T *p1=c, *p2=ch.data();
 
-  for(size_t k1=0; k1<nf; k1++)
+  for(size_t k1=0; k1<nfct; k1++)
     {
     size_t ip=fct[k1].fct;
     size_t l2=ip*l1;
@@ -849,14 +851,13 @@ template<typename T> NOINLINE void pass_all(T c[], T0 fact,
       {
       nfct=0;
       size_t len=length;
-      while ((len%4)==0)
-        { if (nfct>=NFCT) throw OOM(); fct[nfct++].fct=4; len>>=2; }
-      if ((len%2)==0)
+      while ((len&3)==0)
+        { add_factor(4); len>>=2; }
+      if ((len&1)==0)
         {
         len>>=1;
         // factor 2 should be at the front of the factor list
-        if (nfct>=NFCT) throw OOM();
-        fct[nfct++].fct=2;
+        add_factor(2);
         swap(fct[0].fct, fct[nfct-1].fct);
         }
       size_t maxl=(size_t)(sqrt((double)len))+1;
@@ -865,13 +866,12 @@ template<typename T> NOINLINE void pass_all(T c[], T0 fact,
           {
           while ((len%divisor)==0)
             {
-            if (nfct>=NFCT) throw OOM();
-            fct[nfct++].fct=divisor;
+            add_factor(divisor);
             len/=divisor;
             }
-          maxl=(size_t)(sqrt((double)len))+1;
+          maxl=size_t(sqrt((double)len))+1;
           }
-      if (len>1) fct[nfct++].fct=len;
+      if (len>1) add_factor(len);
       }
 
     NOINLINE size_t twsize() const
@@ -895,7 +895,7 @@ template<typename T> NOINLINE void pass_all(T c[], T0 fact,
       size_t memofs=0;
       for (size_t k=0; k<nfct; ++k)
         {
-        size_t ip=fct[k].fct, ido= length/(l1*ip);
+        size_t ip=fct[k].fct, ido=length/(l1*ip);
         fct[k].tw=mem.data()+memofs;
         memofs+=(ip-1)*(ido-1);
         for (size_t j=1; j<ip; ++j)
@@ -920,14 +920,12 @@ template<typename T> NOINLINE void pass_all(T c[], T0 fact,
 
   public:
     NOINLINE cfftp(size_t length_)
+      : length(length_), nfct(0)
       {
-      length=length_;
       if (length==0) throw 42;
-      nfct=0;
       if (length==1) return;
       factorize();
-      size_t tws=twsize();
-      mem.resize(tws);
+      mem.resize(twsize());
       comp_twiddle();
       }
   };
@@ -940,61 +938,40 @@ template<typename T0> class fftblue
     arr<T0> mem;
     T0 *bk, *bkf;
 
-    template<typename T> NOINLINE
-    void fft(T c[], int isign, T0 fct)
+    template<bool bwd, typename T> NOINLINE
+    void fft(T c[], T0 fct)
       {
+      constexpr int isign = bwd ? 1 : -1;
       arr<T> akf(2*n2);
 
-    /* initialize a_k and FFT it */
-      if (isign>0)
-        for (size_t m=0; m<2*n; m+=2)
-          {
-          akf[m]   = c[m]*bk[m]   - c[m+1]*bk[m+1];
-          akf[m+1] = c[m]*bk[m+1] + c[m+1]*bk[m];
-          }
-      else
-        for (size_t m=0; m<2*n; m+=2)
-          {
-          akf[m]   = c[m]*bk[m]   + c[m+1]*bk[m+1];
-          akf[m+1] =-c[m]*bk[m+1] + c[m+1]*bk[m];
-          }
+      /* initialize a_k and FFT it */
+      for (size_t m=0; m<2*n; m+=2)
+        {
+        akf[m]   = c[m]*bk[m]   -isign*c[m+1]*bk[m+1];
+        akf[m+1] = isign*c[m]*bk[m+1] + c[m+1]*bk[m];
+        }
       for (size_t m=2*n; m<2*n2; ++m)
         akf[m]=0.*c[0];
 
       plan.forward ((cmplx<T> *)akf.data(),1.);
 
-    /* do the convolution */
-      if (isign>0)
-        for (size_t m=0; m<2*n2; m+=2)
-          {
-          T im = -akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
-          akf[m  ]  =  akf[m]*bkf[m]   + akf[m+1]*bkf[m+1];
-          akf[m+1]  = im;
-          }
-      else
-        for (size_t m=0; m<2*n2; m+=2)
-          {
-          T im = akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
-          akf[m  ]  = akf[m]*bkf[m]   - akf[m+1]*bkf[m+1];
-          akf[m+1]  = im;
-          }
+      /* do the convolution */
+      for (size_t m=0; m<2*n2; m+=2)
+        {
+        T im = -isign*akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
+        akf[m  ]  =  akf[m]*bkf[m]   + isign*akf[m+1]*bkf[m+1];
+        akf[m+1]  = im;
+        }
 
-    /* inverse FFT */
+      /* inverse FFT */
       plan.backward ((cmplx<T> *)akf.data(),1.);
 
-    /* multiply by b_k */
-      if (isign>0)
-        for (size_t m=0; m<2*n; m+=2)
-          {
-          c[m]   = fct*(bk[m]  *akf[m] - bk[m+1]*akf[m+1]);
-          c[m+1] = fct*(bk[m+1]*akf[m] + bk[m]  *akf[m+1]);
-          }
-      else
-        for (size_t m=0; m<2*n; m+=2)
-          {
-          c[m]   = fct*(bk[m]  *akf[m] + bk[m+1]*akf[m+1]);
-          c[m+1] = fct*(-bk[m+1]*akf[m] + bk[m]  *akf[m+1]);
-          }
+      /* multiply by b_k */
+      for (size_t m=0; m<2*n; m+=2)
+        {
+        c[m]   = fct*(bk[m]  *akf[m] - isign*bk[m+1]*akf[m+1]);
+        c[m+1] = fct*(isign*bk[m+1]*akf[m] + bk[m]  *akf[m+1]);
+        }
       }
 
   public:
@@ -1031,10 +1008,10 @@ template<typename T0> class fftblue
       }
 
     template<typename T> void backward(T c[], T0 fct)
-      { fft(c,1,fct); }
+      { fft<true>(c,fct); }
 
     template<typename T> void forward(T c[], T0 fct)
-      { fft(c,-1,fct); }
+      { fft<false>(c,fct); }
     };
 
 } // unnamed namespace
@@ -1133,5 +1110,5 @@ int main()
   {
   //test_complex<double,1>();
   //test_complex<__m128d,2>();
-  test_complex<float,__m128>();
+  test_complex<double,double>();
   }
