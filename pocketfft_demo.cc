@@ -6,9 +6,9 @@ using namespace std;
 
 int main()
   {
-  vector<size_t> shape{128,128,128};
-  vector<int64_t> stride(shape.size());
-  size_t tmp=1;
+  vector<size_t> shape{2048,2048};
+  vector<ptrdiff_t> stride(shape.size());
+  size_t tmp=sizeof(complex<double>);
   for (int i=shape.size()-1; i>=0; --i)
     {
     stride[i]=tmp;

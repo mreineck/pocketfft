@@ -245,7 +245,7 @@ class sincos_2pibyn
       }
 
   public:
-    sincos_2pibyn(size_t n, bool half)
+    NOINLINE sincos_2pibyn(size_t n, bool half)
       : data(2*n)
       {
       sincos_2pibyn_half(n, data.data());
@@ -1598,7 +1598,7 @@ template<typename T> void copy_and_norm(T *c, T *p1, size_t n, T0 fct)
 
   public:
 
-template<typename T> void forward(T c[], T0 fact)
+template<typename T> NOINLINE void forward(T c[], T0 fact)
   {
   if (length==1) { c[0]*=fact; return; }
   size_t n=length;
@@ -1630,7 +1630,7 @@ template<typename T> void forward(T c[], T0 fact)
   copy_and_norm(c,p1,n,fact);
   }
 
-template<typename T> void backward(T c[], T0 fact)
+template<typename T> NOINLINE void backward(T c[], T0 fact)
   {
   if (length==1) { c[0]*=fact; return; }
   size_t n=length;
@@ -1831,13 +1831,13 @@ template<typename T0> class fftblue
       plan.forward((cmplx<T0> *)bkf,1.);
       }
 
-    template<typename T> void backward(T c[], T0 fct)
+    template<typename T> NOINLINE void backward(T c[], T0 fct)
       { fft<true>(c,fct); }
 
-    template<typename T> void forward(T c[], T0 fct)
+    template<typename T> NOINLINE void forward(T c[], T0 fct)
       { fft<false>(c,fct); }
 
-    template<typename T> void backward_r(T c[], T0 fct)
+    template<typename T> NOINLINE void backward_r(T c[], T0 fct)
       {
       arr<T> tmp(2*n);
       tmp[0]=c[0];
@@ -1854,7 +1854,7 @@ template<typename T0> class fftblue
         c[m] = tmp[2*m];
       }
 
-    template<typename T> void forward_r(T c[], T0 fct)
+    template<typename T> NOINLINE void forward_r(T c[], T0 fct)
       {
       arr<T> tmp(2*n);
       for (size_t m=0; m<n; ++m)
@@ -1898,13 +1898,13 @@ template<typename T0> class pocketfft_c
         packplan=unique_ptr<cfftp<T0>>(new cfftp<T0>(length));
       }
 
-    template<typename T> void backward(T c[], T0 fct)
+    template<typename T> NOINLINE void backward(T c[], T0 fct)
       {
       packplan ? packplan->backward((cmplx<T> *)c,fct)
                : blueplan->backward(c,fct);
       }
 
-    template<typename T> void forward(T c[], T0 fct)
+    template<typename T> NOINLINE void forward(T c[], T0 fct)
       {
       packplan ? packplan->forward((cmplx<T> *)c,fct)
                : blueplan->forward(c,fct);
@@ -1943,13 +1943,13 @@ template<typename T0> class pocketfft_r
         packplan=unique_ptr<rfftp<T0>>(new rfftp<T0>(length));
       }
 
-    template<typename T> void backward(T c[], T0 fct)
+    template<typename T> NOINLINE void backward(T c[], T0 fct)
       {
       packplan ? packplan->backward(c,fct)
                : blueplan->backward_r(c,fct);
       }
 
-    template<typename T> void forward(T c[], T0 fct)
+    template<typename T> NOINLINE void forward(T c[], T0 fct)
       {
       packplan ? packplan->forward(c,fct)
                : blueplan->forward_r(c,fct);
@@ -1963,391 +1963,372 @@ template<typename T0> class pocketfft_r
 //
 
 using shape_t = vector<size_t>;
-using stride_t = vector<int64_t>;
+using stride_t = vector<ptrdiff_t>;
 
-struct diminfo
-  { size_t n; int64_t s; };
-class multiarr
+size_t prod(const shape_t &shape)
+  {
+  size_t res=1;
+  for (auto sz: shape)
+    res*=sz;
+  return res;
+  }
+
+template<typename T> class ndarr
   {
   private:
-    vector<diminfo> dim;
+    char *d;
+    const char *cd;
+    shape_t shp;
+    stride_t str;
 
   public:
-    multiarr (const shape_t &n, const stride_t &s)
-      {
-      dim.reserve(n.size());
-      for (size_t i=0; i<n.size(); ++i)
-        dim.push_back({n[i], s[i]});
-      }
-    size_t ndim() const { return dim.size(); }
-    size_t size(size_t i) const { return dim[i].n; }
-    int64_t stride(size_t i) const { return dim[i].s; }
+    ndarr(const void *data_, const shape_t &shape_, const stride_t &stride_)
+      : d(nullptr), cd(reinterpret_cast<const char *>(data_)), shp(shape_),
+        str(stride_) {}
+    ndarr(void *data_, const shape_t &shape_, const stride_t &stride_)
+      : d(reinterpret_cast<char *>(data_)),
+        cd(reinterpret_cast<const char *>(data_)), shp(shape_), str(stride_) {}
+    size_t ndim() const { return shp.size(); }
+    size_t size() const { return prod(shp); }
+    const shape_t &shape() const { return shp; }
+    size_t shape(size_t i) const { return shp[i]; }
+    const stride_t &stride() const { return str; }
+    const ptrdiff_t &stride(size_t i) const { return str[i]; }
+    T &operator[](ptrdiff_t ofs)
+      { return *reinterpret_cast<T *>(d+ofs); }
+    const T &operator[](ptrdiff_t ofs) const
+      { return *reinterpret_cast<const T *>(cd+ofs); }
   };
 
-class multi_iter
+template<size_t N, typename Ti, typename To> class multi_iter
   {
   public:
-    vector<diminfo> dim;
     shape_t pos;
-    size_t ofs_, len;
-    int64_t str;
-    int64_t rem;
-    bool done_;
+    const ndarr<Ti> &iarr;
+    ndarr<To> &oarr;
 
-  public:
-    multi_iter(const multiarr &arr, size_t idim)
-      : pos(arr.ndim()-1, 0), ofs_(0), len(arr.size(idim)),
-        str(arr.stride(idim)), rem(1), done_(false)
+  private:
+    ptrdiff_t p_ii, p_i[N], str_i;
+    ptrdiff_t p_oi, p_o[N], str_o;
+    size_t idim;
+    size_t rem;
+
+    void advance_i()
       {
-      dim.reserve(arr.ndim()-1);
-      for (size_t i=0; i<arr.ndim(); ++i)
-        if (i!=idim)
-          {
-          dim.push_back({arr.size(i), arr.stride(i)});
-          done_ = done_ || (arr.size(i)==0);
-          rem *= arr.size(i);
-          }
-      }
-    void advance()
-      {
-      if (--rem<=0) {done_=true; return; }
       for (int i=pos.size()-1; i>=0; --i)
         {
+        if (i==int(idim)) continue;
         ++pos[i];
-        ofs_ += dim[i].s;
-        if (pos[i] < dim[i].n)
+        p_ii += iarr.stride(i);
+        p_oi += oarr.stride(i);
+        if (pos[i] < iarr.shape(i))
           return;
         pos[i] = 0;
-        ofs_ -= dim[i].n*dim[i].s;
+        p_ii -= iarr.shape(i)*iarr.stride(i);
+        p_oi -= oarr.shape(i)*oarr.stride(i);
         }
-      done_ = true;
       }
-    bool done() const { return done_; }
-    size_t offset() const { return ofs_; }
-    size_t length() const { return len; }
-    int64_t stride() const { return str; }
-    int64_t remaining() const { return rem; }
+
+  public:
+    multi_iter(const ndarr<Ti> &iarr_, ndarr<To> &oarr_, size_t idim_)
+      : pos(iarr_.ndim(), 0), iarr(iarr_), oarr(oarr_), p_ii(0),
+        str_i(iarr.stride(idim_)), p_oi(0), str_o(oarr.stride(idim_)),
+        idim(idim_), rem(iarr.size()/iarr.shape(idim))
+      {}
+    void advance(size_t n)
+      {
+      if (rem<n) throw runtime_error("underrun");
+      for (size_t i=0; i<n; ++i)
+        {
+        p_i[i] = p_ii;
+        p_o[i] = p_oi;
+        advance_i();
+        }
+      rem -= n;
+      }
+    const Ti &in (size_t i) const { return iarr[p_i[0] + i*str_i]; }
+    const Ti &in (size_t j, size_t i) const { return iarr[p_i[j] + i*str_i]; }
+    To &out (size_t i) { return oarr[p_o[0] + i*str_o]; }
+    To &out (size_t j, size_t i) { return oarr[p_o[j] + i*str_o]; }
+    size_t length_in() const { return iarr.shape(idim); }
+    size_t length_out() const { return oarr.shape(idim); }
+    ptrdiff_t stride_in() const { return str_i; }
+    ptrdiff_t stride_out() const { return str_o; }
+    size_t remaining() const { return rem; }
+    bool inplace() const { return &iarr[0]==&oarr[0]; }
+    bool contiguous_in() const { return str_i==sizeof(Ti); }
+    bool contiguous_out() const { return str_o==sizeof(To); }
   };
 
 
 #if (defined(__AVX512F__))
-#include <x86intrin.h>
 #define HAVE_VECSUPPORT
-template<typename T> struct VTYPE{};
-template<> struct VTYPE<double>
-  { using type = __m512d; };
-template<> struct VTYPE<float>
-  { using type = __m512; };
+constexpr int VBYTELEN=64;
 #elif (defined(__AVX__))
-#include <x86intrin.h>
 #define HAVE_VECSUPPORT
-template<typename T> struct VTYPE{};
-template<> struct VTYPE<double>
-  { using type = __m256d; };
-template<> struct VTYPE<float>
-  { using type = __m256; };
+constexpr int VBYTELEN=32;
 #elif (defined(__SSE2__))
-#include <x86intrin.h>
 #define HAVE_VECSUPPORT
+constexpr int VBYTELEN=16;
+#endif
+
+#if defined(HAVE_VECSUPPORT)
 template<typename T> struct VTYPE{};
 template<> struct VTYPE<double>
-  { using type = __m128d; };
+  {
+  using type = double __attribute__ ((vector_size (VBYTELEN)));
+  static constexpr int vlen=VBYTELEN/8;
+  };
 template<> struct VTYPE<float>
-  { using type = __m128; };
+  {
+  using type = float __attribute__ ((vector_size (VBYTELEN)));
+  static constexpr int vlen=VBYTELEN/4;
+  };
+#else
+template<typename T> struct VTYPE{};
+template<> struct VTYPE<double>
+  {
+  using type = double __attribute__ ((vector_size (8)));
+  static constexpr int vlen=1;
+  };
+template<> struct VTYPE<float>
+  {
+  using type = float __attribute__ ((vector_size (4)));
+  static constexpr int vlen=1;
+  };
 #endif
 
 template<typename T> arr<char> alloc_tmp(const shape_t &shape,
-  size_t tmpsize, size_t elemsize)
+  size_t axsize, size_t elemsize)
   {
-#ifdef HAVE_VECSUPPORT
-  using vtype = typename VTYPE<T>::type;
-  constexpr int vlen = sizeof(vtype)/sizeof(T);
-  return arr<char>(tmpsize*elemsize*vlen);
-#endif
+  auto othersize = prod(shape)/axsize;
+  auto tmpsize = axsize*((othersize>=VTYPE<T>::vlen) ? VTYPE<T>::vlen : 1);
   return arr<char>(tmpsize*elemsize);
   }
 template<typename T> arr<char> alloc_tmp(const shape_t &shape,
   const shape_t &axes, size_t elemsize)
   {
-  size_t fullsize=1;
-  size_t ndim = shape.size();
-  for (size_t i=0; i<ndim; ++i)
-    fullsize*=shape[i];
+  size_t fullsize=prod(shape);
   size_t tmpsize=0;
   for (size_t i=0; i<axes.size(); ++i)
-    tmpsize = max(tmpsize, shape[axes[i]]);
-
-  return alloc_tmp<T>(shape, tmpsize, elemsize);
+    {
+    auto axsize = shape[axes[i]];
+    auto othersize = fullsize/axsize;
+    tmpsize = max(tmpsize, axsize*((othersize>=VTYPE<T>::vlen) ? VTYPE<T>::vlen : 1));
+    }
+  return arr<char>(tmpsize*elemsize);
   }
 
-template<typename T> void pocketfft_general_c(const shape_t &shape,
-  const stride_t &stride_in, const stride_t &stride_out,
-  const shape_t &axes, bool forward, const cmplx<T> *data_in,
-  cmplx<T> *data_out, T fct)
+template<typename T> NOINLINE void pocketfft_general_c(
+  const ndarr<cmplx<T>> &in, ndarr<cmplx<T>> &out,
+  const shape_t &axes, bool forward, T fct)
   {
-  auto storage = alloc_tmp<T>(shape, axes, sizeof(cmplx<T>));
-#ifdef HAVE_VECSUPPORT
-  using vtype = typename VTYPE<T>::type;
-  auto tdatav = (cmplx<vtype> *)storage.data();
-  constexpr int vlen = sizeof(vtype)/sizeof(T);
-#endif
-  auto tdata = (cmplx<T> *)storage.data();
-
-  multiarr a_in(shape, stride_in), a_out(shape, stride_out);
+  auto storage = alloc_tmp<T>(in.shape(), axes, sizeof(cmplx<T>));
   unique_ptr<pocketfft_c<T>> plan;
 
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
-    int axis = axes[iax];
-    multi_iter it_in(a_in, axis), it_out(a_out, axis);
-    if ((!plan) || (it_in.length()!=plan->length()))
-      plan.reset(new pocketfft_c<T>(it_in.length()));
-#ifdef HAVE_VECSUPPORT
-    while (it_in.remaining()>=vlen)
+    constexpr int vlen = VTYPE<T>::vlen;
+    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax]);
+    size_t len=it.length_in();
+    if ((!plan) || (len!=plan->length()))
+      plan.reset(new pocketfft_c<T>(len));
+    if (vlen>1)
+      while (it.remaining()>=vlen)
+        {
+        using vtype = typename VTYPE<T>::type;
+        it.advance(vlen);
+        auto tdatav = (cmplx<vtype> *)storage.data();
+        for (size_t i=0; i<len; ++i)
+          for (size_t j=0; j<vlen; ++j)
+            {
+            tdatav[i].r[j] = it.in(j,i).r;
+            tdatav[i].i[j] = it.in(j,i).i;
+            }
+        forward ? plan->forward((vtype *)tdatav, fct)
+                : plan->backward((vtype *)tdatav, fct);
+        for (size_t i=0; i<len; ++i)
+          for (size_t j=0; j<vlen; ++j)
+            it.out(j,i).Set(tdatav[i].r[j],tdatav[i].i[j]);
+        }
+    while (it.remaining()>0)
       {
-      size_t p_i[vlen];
-      for (size_t i=0; i<vlen; ++i)
-        { p_i[i] = it_in.offset(); it_in.advance(); }
-      size_t p_o[vlen];
-      for (size_t i=0; i<vlen; ++i)
-        { p_o[i] = it_out.offset(); it_out.advance(); }
-      for (size_t i=0; i<it_in.length(); ++i)
-        for (size_t j=0; j<vlen; ++j)
-          {
-          tdatav[i].r[j] = data_in[p_i[j]+i*it_in.stride()].r;
-          tdatav[i].i[j] = data_in[p_i[j]+i*it_in.stride()].i;
-          }
-      forward ? plan->forward((vtype *)tdatav, fct)
-              : plan->backward((vtype *)tdatav, fct);
-      for (size_t i=0; i<it_out.length(); ++i)
-        for (size_t j=0; j<vlen; ++j)
-          data_out[p_o[j]+i*it_out.stride()].Set(tdatav[i].r[j],tdatav[i].i[j]);
+      it.advance(1);
+      auto tdata = (cmplx<T> *)storage.data();
+      if (it.inplace() && it.contiguous_out()) // fully in-place
+        forward ? plan->forward((T *)(&it.in(0)), fct)
+                : plan->backward((T *)(&it.in(0)), fct);
+      else if (it.contiguous_out()) // compute FFT in output location
+        {
+        for (size_t i=0; i<len; ++i)
+          it.out(i) = it.in(i);
+        forward ? plan->forward((T *)(&it.out(0)), fct)
+                : plan->backward((T *)(&it.out(0)), fct);
+        }
+      else
+        {
+        for (size_t i=0; i<len; ++i)
+          tdata[i] = it.in(i);
+        forward ? plan->forward((T *)tdata, fct)
+                : plan->backward((T *)tdata, fct);
+        for (size_t i=0; i<len; ++i)
+          it.out(i) = tdata[i];
+        }
       }
-#endif
-    while (it_in.remaining()>0)
-      {
-      for (size_t i=0; i<it_in.length(); ++i)
-        tdata[i] = data_in[it_in.offset() + i*it_in.stride()];
-      forward ? plan->forward((T *)tdata, fct)
-              : plan->backward((T *)tdata, fct);
-      for (size_t i=0; i<it_out.length(); ++i)
-        data_out[it_out.offset()+i*it_out.stride()] = tdata[i];
-      it_in.advance();
-      it_out.advance();
-      }
-    // after the first dimension, take data from output array
-    a_in = a_out;
-    data_in = data_out;
-    // factor has been applied, use 1 for remaining axes
-    fct = T(1);
+    fct = T(1); // factor has been applied, use 1 for remaining axes
     }
   }
 
-template<typename T> void pocketfft_general_hartley(const shape_t &shape,
-  const stride_t &stride_in, const stride_t &stride_out,
-  const shape_t &axes, const T *data_in, T *data_out, T fct)
+template<typename T> NOINLINE void pocketfft_general_hartley(
+  const ndarr<T> &in, ndarr<T> &out, const shape_t &axes, T fct)
   {
-  auto storage = alloc_tmp<T>(shape, axes, sizeof(T));
-#ifdef HAVE_VECSUPPORT
-  using vtype = typename VTYPE<T>::type;
-  auto tdatav = (vtype *)storage.data();
-  constexpr int vlen = sizeof(vtype)/sizeof(T);
-#endif
-  auto tdata = (T *)storage.data();
-
-  multiarr a_in(shape, stride_in), a_out(shape, stride_out);
+  auto storage = alloc_tmp<T>(in.shape(), axes, sizeof(T));
   unique_ptr<pocketfft_r<T>> plan;
 
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
-    int axis = axes[iax];
-    multi_iter it_in(a_in, axis), it_out(a_out, axis);
-    if ((!plan) || (it_in.length()!=plan->length()))
-      plan.reset(new pocketfft_r<T>(it_in.length()));
-#ifdef HAVE_VECSUPPORT
-    while (it_in.remaining()>=vlen)
+    constexpr int vlen = VTYPE<T>::vlen;
+    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax]);
+    size_t len=it.length_in();
+    if ((!plan) || (len!=plan->length()))
+      plan.reset(new pocketfft_r<T>(len));
+    if (vlen>1)
+      while (it.remaining()>=vlen)
+        {
+        using vtype = typename VTYPE<T>::type;
+        it.advance(vlen);
+        auto tdatav = (vtype *)storage.data();
+        for (size_t i=0; i<len; ++i)
+          for (size_t j=0; j<vlen; ++j)
+            tdatav[i][j] = it.in(j,i);
+        plan->forward((vtype *)tdatav, fct);
+        for (size_t j=0; j<vlen; ++j)
+          it.out(j,0) = tdatav[0][j];
+        size_t i=1, i1=1, i2=len-1;
+        for (i=1; i<len-1; i+=2, ++i1, --i2)
+          for (size_t j=0; j<vlen; ++j)
+            {
+            it.out(j,i1) = tdatav[i][j]+tdatav[i+1][j];
+            it.out(j,i2) = tdatav[i][j]-tdatav[i+1][j];
+            }
+        if (i<len)
+          for (size_t j=0; j<vlen; ++j)
+            it.out(j,i1) = tdatav[i][j];
+        }
+    while (it.remaining()>0)
       {
-      size_t p_i[vlen];
-      for (size_t i=0; i<vlen; ++i)
-        { p_i[i] = it_in.offset(); it_in.advance(); }
-      size_t p_o[vlen];
-      for (size_t i=0; i<vlen; ++i)
-        { p_o[i] = it_out.offset(); it_out.advance(); }
-      for (size_t i=0; i<it_in.length(); ++i)
-        for (size_t j=0; j<vlen; ++j)
-          tdatav[i][j] = data_in[p_i[j]+i*it_in.stride()];
-      plan->forward((vtype *)tdatav, fct);
-      for (size_t j=0; j<vlen; ++j)
-        data_out[p_o[j]] = tdatav[0][j];
-      size_t i=1, i1=1, i2=it_out.length()-1;
-      for (i=1; i<it_out.length()-1; i+=2, ++i1, --i2)
-        for (size_t j=0; j<vlen; ++j)
-          {
-          data_out[p_o[j]+i1*it_out.stride()] = tdatav[i][j]+tdatav[i+1][j];
-          data_out[p_o[j]+i2*it_out.stride()] = tdatav[i][j]-tdatav[i+1][j];
-          }
-      if (i<it_out.length())
-        for (size_t j=0; j<vlen; ++j)
-          data_out[p_o[j]+i1*it_out.stride()] = tdatav[i][j];
-      }
-#endif
-    while (it_in.remaining()>0)
-      {
-      for (size_t i=0; i<it_in.length(); ++i)
-        tdata[i] = data_in[it_in.offset()+i*it_in.stride()];
+      it.advance(1);
+      auto tdata = (T *)storage.data();
+      for (size_t i=0; i<len; ++i)
+        tdata[i] = it.in(i);
       plan->forward((T *)tdata, fct);
       // Hartley order
-      data_out[it_out.offset()] = tdata[0];
-      size_t i=1, i1=1, i2=it_out.length()-1;
-      for (i=1; i<it_out.length()-1; i+=2, ++i1, --i2)
+      it.out(0) = tdata[0];
+      size_t i=1, i1=1, i2=len-1;
+      for (i=1; i<len-1; i+=2, ++i1, --i2)
         {
-        data_out[it_out.offset()+i1*it_out.stride()] = tdata[i]+tdata[i+1];
-        data_out[it_out.offset()+i2*it_out.stride()] = tdata[i]-tdata[i+1];
+        it.out(i1) = tdata[i]+tdata[i+1];
+        it.out(i2) = tdata[i]-tdata[i+1];
         }
-      if (i<it_out.length())
-        data_out[it_out.offset()+i1*it_out.stride()] = tdata[i];
-      it_in.advance();
-      it_out.advance();
+      if (i<len)
+        it.out(i1) = tdata[i];
       }
-    // after the first dimension, take data from output array
-    a_in = a_out;
-    data_in = data_out;
-    // factor has been applied, use 1 for remaining axes
-    fct = T(1);
+    fct = T(1); // factor has been applied, use 1 for remaining axes
     }
   }
 
-template<typename T> void pocketfft_general_r2c(const shape_t &shape,
-  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const T *data_in, cmplx<T> *data_out, T fct)
+template<typename T> NOINLINE void pocketfft_general_r2c(
+  const ndarr<T> &in, ndarr<cmplx<T>> &out, size_t axis, T fct)
   {
-  auto storage = alloc_tmp<T>(shape, shape[axis], sizeof(T));
-#ifdef HAVE_VECSUPPORT
-  using vtype = typename VTYPE<T>::type;
-  auto tdatav = (vtype *)storage.data();
-  constexpr int vlen = sizeof(vtype)/sizeof(T);
-#endif
-  auto tdata = (T *)storage.data();
+  auto storage = alloc_tmp<T>(in.shape(), in.shape(axis), sizeof(T));
 
-  multiarr a_in(shape, stride_in), a_out(shape, stride_out);
-  pocketfft_r<T> plan(shape[axis]);
-  multi_iter it_in(a_in, axis), it_out(a_out, axis);
-  size_t len=shape[axis], s_i=it_in.stride(), s_o=it_out.stride();
-#ifdef HAVE_VECSUPPORT
-  while (it_in.remaining()>=vlen)
-    {
-    size_t p_i[vlen];
-    for (size_t i=0; i<vlen; ++i)
-      { p_i[i] = it_in.offset(); it_in.advance(); }
-    size_t p_o[vlen];
-    for (size_t i=0; i<vlen; ++i)
-      { p_o[i] = it_out.offset(); it_out.advance(); }
-    for (size_t i=0; i<it_in.length(); ++i)
-      for (size_t j=0; j<vlen; ++j)
-        tdatav[i][j] = data_in[p_i[j]+i*it_in.stride()];
-    plan.forward((vtype *)tdatav, fct);
-    for (size_t j=0; j<vlen; ++j)
-      data_out[p_o[j]].Set(tdatav[0][j]);
-    size_t i;
-    for (i=1; i<len-1; i+=2)
+  pocketfft_r<T> plan(in.shape(axis));
+  constexpr int vlen = VTYPE<T>::vlen;
+  multi_iter<vlen, T, cmplx<T>> it(in, out, axis);
+  size_t len=in.shape(axis);
+  if (vlen>1)
+    while (it.remaining()>=vlen)
       {
-      size_t io = (i+1)/2;
+      using vtype = typename VTYPE<T>::type;
+      it.advance(vlen);
+      auto tdatav = (vtype *)storage.data();
+      for (size_t i=0; i<len; ++i)
+        for (size_t j=0; j<vlen; ++j)
+          tdatav[i][j] = it.in(j,i);
+      plan.forward((vtype *)tdatav, fct);
       for (size_t j=0; j<vlen; ++j)
-        data_out[p_o[j]+io*it_out.stride()].Set(tdatav[i][j], tdatav[i+1][j]);
+        it.out(j,0).Set(tdatav[0][j]);
+      size_t i=1, ii=1;
+      for (; i<len-1; i+=2, ++ii)
+        for (size_t j=0; j<vlen; ++j)
+          it.out(j,ii).Set(tdatav[i][j], tdatav[i+1][j]);
+      if (i<len)
+        for (size_t j=0; j<vlen; ++j)
+          it.out(j,ii).Set(tdatav[i][j]);
       }
-    if (i<len)
-      {
-      size_t io = (i+1)/2;
-      for (size_t j=0; j<vlen; ++j)
-        data_out[p_o[j]+io*it_out.stride()].Set(tdatav[i][j]);
-      }
-    }
-#endif
-  while (it_in.remaining()>0)
+  while (it.remaining()>0)
     {
-    const T *d_i = data_in+it_in.offset();
-    cmplx<T> *d_o = data_out+it_out.offset();
+    it.advance(1);
+    auto tdata = (T *)storage.data();
     for (size_t i=0; i<len; ++i)
-      tdata[i] = d_i[i*s_i];
+      tdata[i] = it.in(i);
     plan.forward(tdata, fct);
-    d_o[0].Set(tdata[0]);
-    size_t i;
-    for (i=1; i<len-1; i+=2)
-      d_o[((i+1)/2)*s_o].Set(tdata[i], tdata[i+1]);
+    it.out(0).Set(tdata[0]);
+    size_t i=1, ii=1;
+    for (; i<len-1; i+=2, ++ii)
+      it.out(ii).Set(tdata[i], tdata[i+1]);
     if (i<len)
-      d_o[((i+1)/2)*s_o].Set(tdata[i]);
-    it_in.advance();
-    it_out.advance();
+      it.out(ii).Set(tdata[i]);
     }
   }
-template<typename T> void pocketfft_general_c2r(const shape_t &shape_out,
-  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const cmplx<T> *data_in, T *data_out, T fct)
+template<typename T> NOINLINE void pocketfft_general_c2r(
+  const ndarr<cmplx<T>> &in, ndarr<T> &out, size_t axis, T fct)
   {
-  auto storage = alloc_tmp<T>(shape_out, shape_out[axis], sizeof(T));
-#ifdef HAVE_VECSUPPORT
-  using vtype = typename VTYPE<T>::type;
-  auto tdatav = (vtype *)storage.data();
-  constexpr int vlen = sizeof(vtype)/sizeof(T);
-#endif
-  auto tdata = (T *)storage.data();
+  auto storage = alloc_tmp<T>(out.shape(), out.shape(axis), sizeof(T));
+  pocketfft_r<T> plan(out.shape(axis));
 
-  multiarr a_in(shape_out, stride_in), a_out(shape_out, stride_out);
-  pocketfft_r<T> plan(shape_out[axis]);
-  multi_iter it_in(a_in, axis), it_out(a_out, axis);
-  size_t len=shape_out[axis], s_i=it_in.stride(), s_o=it_out.stride();
-#ifdef HAVE_VECSUPPORT
-  while (it_in.remaining()>=vlen)
-    {
-    size_t p_i[vlen];
-    for (size_t i=0; i<vlen; ++i)
-      { p_i[i] = it_in.offset(); it_in.advance(); }
-    size_t p_o[vlen];
-    for (size_t i=0; i<vlen; ++i)
-      { p_o[i] = it_out.offset(); it_out.advance(); }
-    for (size_t j=0; j<vlen; ++j)
-      tdatav[0][j]=data_in[p_i[j]].r;
-    size_t i;
-    for (i=1; i<len-1; i+=2)
+  constexpr int vlen = VTYPE<T>::vlen;
+  multi_iter<vlen, cmplx<T>, T> it(in, out, axis);
+  size_t len=out.shape(axis);
+  if (vlen>1)
+    while (it.remaining()>=vlen)
       {
-      size_t ii = (i+1)/2;
+      using vtype = typename VTYPE<T>::type;
+      it.advance(vlen);
+      auto tdatav = (vtype *)storage.data();
       for (size_t j=0; j<vlen; ++j)
-        {
-        tdatav[i][j] = data_in[p_i[j]+ii*s_i].r;
-        tdatav[i+1][j] = data_in[p_i[j]+ii*s_i].i;
-        }
+        tdatav[0][j]=it.in(j,0).r;
+      size_t i=1, ii=1;
+      for (; i<len-1; i+=2, ++ii)
+        for (size_t j=0; j<vlen; ++j)
+          {
+          tdatav[i][j] = it.in(j,ii).r;
+          tdatav[i+1][j] = it.in(j,ii).i;
+          }
+      if (i<len)
+        for (size_t j=0; j<vlen; ++j)
+          tdatav[i][j] = it.in(j,ii).r;
+      plan.backward(tdatav, fct);
+      for (size_t i=0; i<len; ++i)
+        for (size_t j=0; j<vlen; ++j)
+          it.out(j,i) = tdatav[i][j];
+      }
+  while (it.remaining()>0)
+    {
+    it.advance(1);
+    auto tdata = (T *)storage.data();
+    tdata[0]=it.in(0).r;
+    size_t i=1, ii=1;
+    for (; i<len-1; i+=2, ++ii)
+      {
+      tdata[i] = it.in(ii).r;
+      tdata[i+1] = it.in(ii).i;
       }
     if (i<len)
-      {
-      size_t ii = (i+1)/2;
-      for (size_t j=0; j<vlen; ++j)
-        tdatav[i][j] = data_in[p_i[j]+ii*s_i].r;
-      }
-    plan.backward(tdatav, fct);
-    for (size_t i=0; i<len; ++i)
-      for (size_t j=0; j<vlen; ++j)
-        data_out[p_o[j]+i*s_o] = tdatav[i][j];
-    }
-#endif
-  while (!it_in.done())
-    {
-    const cmplx<T> *d_i = data_in+it_in.offset();
-    T *d_o = data_out+it_out.offset();
-    tdata[0]=d_i[0].r;
-    size_t i;
-    for (i=1; i<len-1; i+=2)
-      {
-      size_t ii = (i+1)/2;
-      tdata[i] = d_i[ii*s_i].r;
-      tdata[i+1] = d_i[ii*s_i].i;
-      }
-    if (i<len)
-      tdata[i] = d_i[((i+1)/2)*s_i].r;
+      tdata[i] = it.in(ii).r;
     plan.backward(tdata, fct);
     for (size_t i=0; i<len; ++i)
-      d_o[i*s_o] = tdata[i];
-    it_in.advance();
-    it_out.advance();
+      it.out(i) = tdata[i];
     }
   }
 
@@ -2356,7 +2337,7 @@ template<typename T> void pocketfft_general_c2r(const shape_t &shape_out,
 #include "pocketfft.h"
 
 int pocketfft_complex(size_t ndim, const size_t *shape,
-  const int64_t *stride_in, const int64_t *stride_out, size_t nax,
+  const ptrdiff_t *stride_in, const ptrdiff_t *stride_out, size_t nax,
   const size_t *axes, int forward, const void *data_in,
   void *data_out, double fct, int dp)
   {
@@ -2373,14 +2354,28 @@ int pocketfft_complex(size_t ndim, const size_t *shape,
     for (size_t i=0; i<nax; ++i)
       xaxes[i] = axes[i];
     if (dp)
-      pocketfft_general_c(xshape, xstride_in, xstride_out, xaxes, bool(forward),
-        (const cmplx<double> *)data_in, (cmplx<double> *) data_out, fct);
+      {
+      ndarr<cmplx<double>> ain(data_in, xshape, xstride_in);
+      ndarr<cmplx<double>> aout(data_out, xshape, xstride_out);
+      pocketfft_general_c(ain, aout, xaxes, bool(forward), fct);
+      }
     else
-      pocketfft_general_c(xshape, xstride_in, xstride_out, xaxes, bool(forward),
-        (const cmplx<float> *)data_in, (cmplx<float> *) data_out, float(fct));
+      {
+      ndarr<cmplx<float>> ain(data_in, xshape, xstride_in);
+      ndarr<cmplx<float>> aout(data_out, xshape, xstride_out);
+      pocketfft_general_c(ain, aout, xaxes, bool(forward), float(fct));
+      }
     }
   catch(...) {
     return 1;
     }
   return 0;
   }
+
+void pocketfft_r2c(size_t ndim, const size_t *shape,
+  const ptrdiff_t *stride_in, const ptrdiff_t *stride_out, size_t axis,
+  const void *data_in, void *data_out, double fct, int dp);
+
+void pocketfft_c2r(size_t ndim, const size_t *shape, size_t new_size,
+  const ptrdiff_t *stride_in, const ptrdiff_t *stride_out, size_t axis,
+  const void *data_in, void *data_out, double fct, int dp);
