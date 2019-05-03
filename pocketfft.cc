@@ -69,14 +69,52 @@ template<typename T> struct arr
     size_t size() const { return sz; }
   };
 
+template<typename T> struct cmplx {
+  T r, i;
+  cmplx() {}
+  cmplx(T r_, T i_) : r(r_), i(i_) {}
+  void Set(T r_, T i_) { r=r_; i=i_; }
+  void Set(T r_) { r=r_; i=T(0); }
+  cmplx &operator+= (const cmplx &other)
+    { r+=other.r; i+=other.i; return *this; }
+  template<typename T2>cmplx &operator*= (T2 other)
+    { r*=other; i*=other; return *this; }
+  cmplx operator+ (const cmplx &other) const
+    { return cmplx(r+other.r, i+other.i); }
+  cmplx operator- (const cmplx &other) const
+    { return cmplx(r-other.r, i-other.i); }
+  template<typename T2> auto operator* (const T2 &other) const
+    -> cmplx<decltype(r*other)>
+    { return {r*other, i*other}; }
+  template<typename T2> auto operator* (const cmplx<T2> &other) const
+    -> cmplx<decltype(r+other.r)>
+    { return {r*other.r-i*other.i, r*other.i + i*other.r}; }
+  template<bool bwd, typename T2> auto special_mul (const cmplx<T2> &other) const
+    -> cmplx<decltype(r+other.r)>
+    {
+    return bwd ? cmplx(r*other.r-i*other.i, r*other.i + i*other.r)
+               : cmplx(r*other.r+i*other.i, i*other.r - r*other.i);
+    }
+};
+template<typename T> void PMC(cmplx<T> &a, cmplx<T> &b,
+  const cmplx<T> &c, const cmplx<T> &d)
+  { a = c+d; b = c-d; }
+template<typename T> cmplx<T> conj(const cmplx<T> &a)
+  { return {a.r, -a.i}; }
+
+template<typename T> void ROT90(cmplx<T> &a)
+  { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
+template<typename T> void ROTM90(cmplx<T> &a)
+  { auto tmp_=-a.r; a.r=a.i; a.i=tmp_; }
+
 //
 // twiddle factor section
 //
 
-class sincos_2pibyn
+template<typename T> class sincos_2pibyn
   {
   private:
-    arr<double> data;
+    arr<T> data;
 
     // adapted from https://stackoverflow.com/questions/42792939/
     // CAUTION: this function only works for arguments in the range
@@ -107,15 +145,20 @@ class sincos_2pibyn
       res[1] = s;
       }
 
-    NOINLINE void calc_first_octant(size_t den, double * restrict res)
+    NOINLINE void calc_first_octant(size_t den, T * restrict res)
       {
       size_t n = (den+4)>>3;
       if (n==0) return;
       res[0]=1.; res[1]=0.;
       if (n==1) return;
       size_t l1=(size_t)sqrt(n);
+      arr<double> tmp(2*l1);
       for (size_t i=1; i<l1; ++i)
-        my_sincosm1pi((2.*i)/den,&res[2*i]);
+        {
+        my_sincosm1pi((2.*i)/den,&tmp[2*i]);
+        res[2*i  ] = tmp[2*i]+1.;
+        res[2*i+1] = tmp[2*i+1];
+        }
       size_t start=l1;
       while(start<n)
         {
@@ -127,19 +170,17 @@ class sincos_2pibyn
         if (start+end>n) end = n-start;
         for (size_t i=1; i<end; ++i)
           {
-          double csx[2]={res[2*i], res[2*i+1]};
+          double csx[2]={tmp[2*i], tmp[2*i+1]};
           res[2*(start+i)] = ((cs[0]*csx[0] - cs[1]*csx[1] + cs[0]) + csx[0]) + 1.;
           res[2*(start+i)+1] = (cs[0]*csx[1] + cs[1]*csx[0]) + cs[1] + csx[1];
           }
         start += l1;
         }
-      for (size_t i=1; i<l1; ++i)
-        res[2*i] += 1.;
       }
 
-    NOINLINE void calc_first_quadrant(size_t n, double * restrict res)
+    NOINLINE void calc_first_quadrant(size_t n, T * restrict res)
       {
-      double * restrict p = res+n;
+      T * restrict p = res+n;
       calc_first_octant(n<<1, p);
       size_t ndone=(n+2)>>2;
       size_t i=0, idx1=0, idx2=2*ndone-2;
@@ -157,10 +198,10 @@ class sincos_2pibyn
         }
       }
 
-    NOINLINE void calc_first_half(size_t n, double * restrict res)
+    NOINLINE void calc_first_half(size_t n, T * restrict res)
       {
       int ndone=(n+1)>>1;
-      double * p = res+n-1;
+      T * p = res+n-1;
       calc_first_octant(n<<2, p);
       int i4=0, in=n, i=0;
       for (; i4<=in-i4; ++i, i4+=4) // octant 0
@@ -184,7 +225,7 @@ class sincos_2pibyn
         }
       }
 
-    NOINLINE void fill_first_quadrant(size_t n, double * restrict res)
+    NOINLINE void fill_first_quadrant(size_t n, T * restrict res)
       {
       const double hsqt2 = 0.707106781186547524400844362104849;
       size_t quart = n>>2;
@@ -197,7 +238,7 @@ class sincos_2pibyn
         }
       }
 
-    NOINLINE void fill_first_half(size_t n, double * restrict res)
+    NOINLINE void fill_first_half(size_t n, T * restrict res)
       {
       size_t half = n>>1;
       if ((n&3)==0)
@@ -214,7 +255,7 @@ class sincos_2pibyn
           }
       }
 
-    NOINLINE void fill_second_half(size_t n, double * restrict res)
+    NOINLINE void fill_second_half(size_t n, T * restrict res)
       {
       if ((n&1)==0)
         for (size_t i=0; i<n; ++i)
@@ -227,7 +268,7 @@ class sincos_2pibyn
           }
       }
 
-    NOINLINE void sincos_2pibyn_half(size_t n, double * restrict res)
+    NOINLINE void sincos_2pibyn_half(size_t n, T * restrict res)
       {
       if ((n&3)==0)
         {
@@ -252,7 +293,10 @@ class sincos_2pibyn
       if (!half) fill_second_half(n, data.data());
       }
 
-    double operator[](size_t idx) const { return data[idx]; }
+    T operator[](size_t idx) const { return data[idx]; }
+    const T *rdata() const { return data; }
+    const cmplx<T> *cdata() const
+      { return reinterpret_cast<const cmplx<T> *>(data.data()); }
   };
 
 NOINLINE size_t largest_prime_factor (size_t n)
@@ -309,50 +353,6 @@ NOINLINE size_t good_size(size_t n)
             if (f235711>=n) bestfac=f235711;
   return bestfac;
   }
-
-template<typename T> struct cmplx {
-  T r, i;
-  cmplx() {}
-  cmplx(T r_, T i_) : r(r_), i(i_) {}
-  void Set(T r_, T i_) { r=r_; i=i_; }
-  void Set(T r_) { r=r_; i=T(0); }
-  cmplx &operator+= (const cmplx &other)
-    { r+=other.r; i+=other.i; return *this; }
-  template<typename T2>cmplx &operator*= (T2 other)
-    { r*=other; i*=other; return *this; }
-  cmplx operator+ (const cmplx &other) const
-    { return cmplx(r+other.r, i+other.i); }
-  cmplx operator- (const cmplx &other) const
-    { return cmplx(r-other.r, i-other.i); }
-  template<typename T2> auto operator* (const T2 &other) const
-    -> cmplx<decltype(r*other)>
-    {
-    return {r*other, i*other};
-    }
-  template<typename T2> auto operator* (const cmplx<T2> &other) const
-    -> cmplx<decltype(r+other.r)>
-    {
-    return {r*other.r-i*other.i, r*other.i + i*other.r};
-    }
-  template<bool bwd, typename T2> auto special_mul (const cmplx<T2> &other) const
-    -> cmplx<decltype(r+other.r)>
-    {
-    if (bwd)
-      return {r*other.r-i*other.i, r*other.i + i*other.r};
-    else
-      return {r*other.r+i*other.i, i*other.r - r*other.i};
-    }
-};
-template<typename T> void PMC(cmplx<T> &a, cmplx<T> &b,
-  const cmplx<T> &c, const cmplx<T> &d)
-  { a = c+d; b = c-d; }
-template<typename T> cmplx<T> conj(const cmplx<T> &a)
-  { return {a.r, -a.i}; }
-
-template<typename T> void ROT90(cmplx<T> &a)
-  { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
-template<typename T> void ROTM90(cmplx<T> &a)
-  { auto tmp_=-a.r; a.r=a.i; a.i=tmp_; }
 
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
@@ -907,7 +907,8 @@ template<bool bwd, typename T> NOINLINE void pass_all(T c[], T0 fact)
 
     NOINLINE void comp_twiddle()
       {
-      sincos_2pibyn twid(length, false);
+      sincos_2pibyn<T0> twid(length, false);
+      auto twiddle = twid.cdata();
       size_t l1=1;
       size_t memofs=0;
       for (size_t k=0; k<nfct; ++k)
@@ -917,19 +918,13 @@ template<bool bwd, typename T> NOINLINE void pass_all(T c[], T0 fact)
         memofs+=(ip-1)*(ido-1);
         for (size_t j=1; j<ip; ++j)
           for (size_t i=1; i<ido; ++i)
-            {
-            fct[k].tw[(j-1)*(ido-1)+i-1].r = twid[2*j*l1*i];
-            fct[k].tw[(j-1)*(ido-1)+i-1].i = twid[2*j*l1*i+1];
-            }
+            fct[k].tw[(j-1)*(ido-1)+i-1] = twiddle[j*l1*i];
         if (ip>11)
           {
           fct[k].tws=mem.data()+memofs;
           memofs+=ip;
           for (size_t j=0; j<ip; ++j)
-            {
-            fct[k].tws[j].r = twid[2*j*l1*ido];
-            fct[k].tws[j].i = twid[2*j*l1*ido+1];
-            }
+            fct[k].tws[j] = twiddle[j*l1*ido];
           }
         l1*=ip;
         }
@@ -978,8 +973,8 @@ template<typename T0> class rfftp
 #define CC(a,b,c) cc[(a)+ido*((b)+l1*(c))]
 #define CH(a,b,c) ch[(a)+ido*((b)+cdim*(c))]
 
-template<typename T> NOINLINE void radf2 (size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const T0 * restrict wa)
+template<typename T> NOINLINE void radf2 (size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=2;
 
@@ -1003,8 +998,8 @@ template<typename T> NOINLINE void radf2 (size_t ido, size_t l1, const T * restr
       }
   }
 
-template<typename T> NOINLINE void radf3(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const T0 * restrict wa)
+template<typename T> NOINLINE void radf3(size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=3;
   constexpr T0 taur=-0.5, taui=0.86602540378443864676;
@@ -1037,8 +1032,8 @@ template<typename T> NOINLINE void radf3(size_t ido, size_t l1, const T * restri
       }
   }
 
-template<typename T> NOINLINE void radf4(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const T0 * restrict wa)
+template<typename T> NOINLINE void radf4(size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=4;
   constexpr T0 hsqt2=0.70710678118654752440;
@@ -1078,8 +1073,8 @@ template<typename T> NOINLINE void radf4(size_t ido, size_t l1, const T * restri
       }
   }
 
-template<typename T> NOINLINE void radf5(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const T0 * restrict wa)
+template<typename T> NOINLINE void radf5(size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=5;
   constexpr T0 tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
@@ -1303,8 +1298,8 @@ template<typename T> NOINLINE void radb2(size_t ido, size_t l1, const T * restri
       }
   }
 
-template<typename T> NOINLINE void radb3(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const T0 * restrict wa)
+template<typename T> NOINLINE void radb3(size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=3;
   constexpr T0 taur=-0.5, taui=0.86602540378443864676;
@@ -1338,8 +1333,8 @@ template<typename T> NOINLINE void radb3(size_t ido, size_t l1, const T * restri
       }
   }
 
-template<typename T> NOINLINE void radb4(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const T0 * restrict wa)
+template<typename T> NOINLINE void radb4(size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=4;
   constexpr T0 sqrt2=1.41421356237309504880;
@@ -1384,8 +1379,8 @@ template<typename T> NOINLINE void radb4(size_t ido, size_t l1, const T * restri
       }
   }
 
-template<typename T>NOINLINE void radb5(size_t ido, size_t l1, const T * restrict cc,
-  T * restrict ch, const T0 * restrict wa)
+template<typename T>NOINLINE void radb5(size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=5;
   constexpr T0 tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
@@ -1702,7 +1697,7 @@ size_t twsize() const
 
 NOINLINE void comp_twiddle()
   {
-  sincos_2pibyn twid(length, true);
+  sincos_2pibyn<T0> twid(length, true);
   size_t l1=1;
   T0 *ptr=mem.data();
   for (size_t k=0; k<nfct; ++k)
@@ -1740,7 +1735,7 @@ NOINLINE void comp_twiddle()
 NOINLINE rfftp(size_t length_)
   : length(length_)
   {
-  if (length==0) throw runtime_error("zero_sized FFT");
+  if (length==0) throw runtime_error("zero-sized FFT");
   nfct=0;
   if (length==1) return;
   factorize();
@@ -1759,112 +1754,89 @@ template<typename T0> class fftblue
   private:
     size_t n, n2;
     cfftp<T0> plan;
-    arr<T0> mem;
-    T0 *bk, *bkf;
+    arr<cmplx<T0>> mem;
+    cmplx<T0> *bk, *bkf;
 
     template<bool bwd, typename T> NOINLINE
-    void fft(T c[], T0 fct)
+    void fft(cmplx<T> c[], T0 fct)
       {
-      constexpr T0 isign = bwd ? 1 : -1;
-      arr<T> akf(2*n2);
+      arr<cmplx<T>> akf(n2);
 
       /* initialize a_k and FFT it */
-      for (size_t m=0; m<2*n; m+=2)
-        {
-        akf[m]   = c[m]*bk[m]   -isign*c[m+1]*bk[m+1];
-        akf[m+1] = isign*c[m]*bk[m+1] + c[m+1]*bk[m];
-        }
-      for (size_t m=2*n; m<2*n2; ++m)
-        akf[m]=0.*c[0];
+      for (size_t m=0; m<n; ++m)
+        akf[m] = c[m].template special_mul<bwd>(bk[m]);
+      for (size_t m=n; m<n2; ++m)
+        akf[m]=akf[0]*T0(0);
 
-      plan.forward ((cmplx<T> *)akf.data(),1.);
+      plan.forward (akf.data(),1.);
 
       /* do the convolution */
-      for (size_t m=0; m<2*n2; m+=2)
-        {
-        T im = -isign*akf[m]*bkf[m+1] + akf[m+1]*bkf[m];
-        akf[m  ]  =  akf[m]*bkf[m]   + isign*akf[m+1]*bkf[m+1];
-        akf[m+1]  = im;
-        }
+      for (size_t m=0; m<n2; ++m)
+        akf[m] = akf[m].template special_mul<!bwd>(bkf[m]);
 
       /* inverse FFT */
-      plan.backward ((cmplx<T> *)akf.data(),1.);
+      plan.backward (akf.data(),1.);
 
       /* multiply by b_k */
-      for (size_t m=0; m<2*n; m+=2)
-        {
-        c[m]   = fct*(bk[m]  *akf[m] - isign*bk[m+1]*akf[m+1]);
-        c[m+1] = fct*(isign*bk[m+1]*akf[m] + bk[m]  *akf[m+1]);
-        }
+      for (size_t m=0; m<n; ++m)
+        c[m] = akf[m].template special_mul<bwd>(bk[m])*fct;
       }
 
   public:
     NOINLINE fftblue(size_t length)
-      : n(length), n2(good_size(n*2-1)), plan(n2), mem(2*(n+n2)),
-        bk(mem.data()), bkf(mem.data()+2*n)
+      : n(length), n2(good_size(n*2-1)), plan(n2), mem(n+n2),
+        bk(mem.data()), bkf(mem.data()+n)
       {
       /* initialize b_k */
-      sincos_2pibyn tmp(2*n, false);
-      bk[0] = 1;
-      bk[1] = 0;
+      sincos_2pibyn<T0> tmp_(2*n, false);
+      auto tmp = tmp_.cdata();
+      bk[0].Set(1, 0);
 
       size_t coeff=0;
       for (size_t m=1; m<n; ++m)
         {
         coeff+=2*m-1;
         if (coeff>=2*n) coeff-=2*n;
-        bk[2*m  ] = tmp[2*coeff  ];
-        bk[2*m+1] = tmp[2*coeff+1];
+        bk[m] = tmp[coeff];
         }
 
       /* initialize the zero-padded, Fourier transformed b_k. Add normalisation. */
       T0 xn2 = 1./n2;
       bkf[0] = bk[0]*xn2;
-      bkf[1] = bk[1]*xn2;
-      for (size_t m=2; m<2*n; m+=2)
-        {
-        bkf[m]   = bkf[2*n2-m]   = bk[m]   *xn2;
-        bkf[m+1] = bkf[2*n2-m+1] = bk[m+1] *xn2;
-        }
-      for (size_t m=2*n;m<=(2*n2-2*n+1);++m)
-        bkf[m]=0.;
-      plan.forward((cmplx<T0> *)bkf,1.);
+      for (size_t m=1; m<n; ++m)
+        bkf[m] = bkf[n2-m] = bk[m]*xn2;
+      for (size_t m=n;m<=(n2-n);++m)
+        bkf[m].Set(0.,0.);
+      plan.forward(bkf,1.);
       }
 
-    template<typename T> NOINLINE void backward(T c[], T0 fct)
+    template<typename T> NOINLINE void backward(cmplx<T> c[], T0 fct)
       { fft<true>(c,fct); }
 
-    template<typename T> NOINLINE void forward(T c[], T0 fct)
+    template<typename T> NOINLINE void forward(cmplx<T> c[], T0 fct)
       { fft<false>(c,fct); }
 
     template<typename T> NOINLINE void backward_r(T c[], T0 fct)
       {
-      arr<T> tmp(2*n);
-      tmp[0]=c[0];
-      tmp[1]=c[0]*0.;
-      memcpy (tmp.data()+2,c+1, (n-1)*sizeof(T));
-      if ((n&1)==0) tmp[n+1]=c[0]*0.;
-      for (size_t m=2; m<n; m+=2)
-        {
-        tmp[2*n-m]=tmp[m];
-        tmp[2*n-m+1]=-tmp[m+1];
-        }
+      arr<cmplx<T>> tmp(n);
+      tmp[0].Set(c[0],c[0]*0);
+      memcpy ((void *)(tmp.data()+1),(void *)(c+1), (n-1)*sizeof(T));
+      if ((n&1)==0) tmp[n/2].i=c[0]*0.;
+      for (size_t m=1; 2*m<n; ++m)
+        tmp[n-m].Set(tmp[m].r, -tmp[m].i);
       fft<true>(tmp.data(),fct);
       for (size_t m=0; m<n; ++m)
-        c[m] = tmp[2*m];
+        c[m] = tmp[m].r;
       }
 
     template<typename T> NOINLINE void forward_r(T c[], T0 fct)
       {
-      arr<T> tmp(2*n);
+      arr<cmplx<T>> tmp(n);
       for (size_t m=0; m<n; ++m)
-        {
-        tmp[2*m] = c[m];
-        tmp[2*m+1] = c[m]*0.;
-        }
+        tmp[m].Set(c[m], 0.*c[m]);
       fft<false>(tmp.data(),fct);
-      c[0] = tmp[0];
-      memcpy (c+1, tmp.data()+2, (n-1)*sizeof(T));
+      c[0] = tmp[0].r;
+      memcpy (c+1, tmp.data()+1, (n-1)*sizeof(T));
       }
     };
 
@@ -1901,13 +1873,13 @@ template<typename T0> class pocketfft_c
     template<typename T> NOINLINE void backward(T c[], T0 fct)
       {
       packplan ? packplan->backward((cmplx<T> *)c,fct)
-               : blueplan->backward(c,fct);
+               : blueplan->backward((cmplx<T> *)c,fct);
       }
 
     template<typename T> NOINLINE void forward(T c[], T0 fct)
       {
       packplan ? packplan->forward((cmplx<T> *)c,fct)
-               : blueplan->forward(c,fct);
+               : blueplan->forward((cmplx<T> *)c,fct);
       }
 
     size_t length() const { return len; }
@@ -2077,25 +2049,19 @@ template<typename T> struct VTYPE{};
 template<> struct VTYPE<double>
   {
   using type = double __attribute__ ((vector_size (VBYTELEN)));
-  static constexpr int vlen=VBYTELEN/8;
+  static constexpr int vlen=VBYTELEN/sizeof(double);
   };
 template<> struct VTYPE<float>
   {
   using type = float __attribute__ ((vector_size (VBYTELEN)));
-  static constexpr int vlen=VBYTELEN/4;
+  static constexpr int vlen=VBYTELEN/sizeof(float);
   };
 #else
 template<typename T> struct VTYPE{};
 template<> struct VTYPE<double>
-  {
-  using type = double __attribute__ ((vector_size (8)));
-  static constexpr int vlen=1;
-  };
+  {  static constexpr int vlen=1; };
 template<> struct VTYPE<float>
-  {
-  using type = float __attribute__ ((vector_size (4)));
-  static constexpr int vlen=1;
-  };
+  { static constexpr int vlen=1; };
 #endif
 
 template<typename T> arr<char> alloc_tmp(const shape_t &shape,
@@ -2114,7 +2080,8 @@ template<typename T> arr<char> alloc_tmp(const shape_t &shape,
     {
     auto axsize = shape[axes[i]];
     auto othersize = fullsize/axsize;
-    tmpsize = max(tmpsize, axsize*((othersize>=VTYPE<T>::vlen) ? VTYPE<T>::vlen : 1));
+    tmpsize = max(tmpsize,
+                  axsize*((othersize>=VTYPE<T>::vlen) ? VTYPE<T>::vlen : 1));
     }
   return arr<char>(tmpsize*elemsize);
   }
@@ -2133,6 +2100,7 @@ template<typename T> NOINLINE void pocketfft_general_c(
     size_t len=it.length_in();
     if ((!plan) || (len!=plan->length()))
       plan.reset(new pocketfft_c<T>(len));
+#if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
         {
@@ -2145,31 +2113,32 @@ template<typename T> NOINLINE void pocketfft_general_c(
             tdatav[i].r[j] = it.in(j,i).r;
             tdatav[i].i[j] = it.in(j,i).i;
             }
-        forward ? plan->forward((vtype *)tdatav, fct)
+        forward ? plan->forward ((vtype *)tdatav, fct)
                 : plan->backward((vtype *)tdatav, fct);
         for (size_t i=0; i<len; ++i)
           for (size_t j=0; j<vlen; ++j)
             it.out(j,i).Set(tdatav[i].r[j],tdatav[i].i[j]);
         }
+#endif
     while (it.remaining()>0)
       {
       it.advance(1);
       auto tdata = (cmplx<T> *)storage.data();
       if (it.inplace() && it.contiguous_out()) // fully in-place
-        forward ? plan->forward((T *)(&it.in(0)), fct)
-                : plan->backward((T *)(&it.in(0)), fct);
+        forward ? plan->forward ((T *)(&it.out(0)), fct)
+                : plan->backward((T *)(&it.out(0)), fct);
       else if (it.contiguous_out()) // compute FFT in output location
         {
         for (size_t i=0; i<len; ++i)
           it.out(i) = it.in(i);
-        forward ? plan->forward((T *)(&it.out(0)), fct)
+        forward ? plan->forward ((T *)(&it.out(0)), fct)
                 : plan->backward((T *)(&it.out(0)), fct);
         }
       else
         {
         for (size_t i=0; i<len; ++i)
           tdata[i] = it.in(i);
-        forward ? plan->forward((T *)tdata, fct)
+        forward ? plan->forward ((T *)tdata, fct)
                 : plan->backward((T *)tdata, fct);
         for (size_t i=0; i<len; ++i)
           it.out(i) = tdata[i];
@@ -2192,6 +2161,7 @@ template<typename T> NOINLINE void pocketfft_general_hartley(
     size_t len=it.length_in();
     if ((!plan) || (len!=plan->length()))
       plan.reset(new pocketfft_r<T>(len));
+#if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
         {
@@ -2215,6 +2185,7 @@ template<typename T> NOINLINE void pocketfft_general_hartley(
           for (size_t j=0; j<vlen; ++j)
             it.out(j,i1) = tdatav[i][j];
         }
+#endif
     while (it.remaining()>0)
       {
       it.advance(1);
@@ -2246,6 +2217,7 @@ template<typename T> NOINLINE void pocketfft_general_r2c(
   constexpr int vlen = VTYPE<T>::vlen;
   multi_iter<vlen, T, cmplx<T>> it(in, out, axis);
   size_t len=in.shape(axis);
+#if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
       {
@@ -2266,6 +2238,7 @@ template<typename T> NOINLINE void pocketfft_general_r2c(
         for (size_t j=0; j<vlen; ++j)
           it.out(j,ii).Set(tdatav[i][j]);
       }
+#endif
   while (it.remaining()>0)
     {
     it.advance(1);
@@ -2290,6 +2263,7 @@ template<typename T> NOINLINE void pocketfft_general_c2r(
   constexpr int vlen = VTYPE<T>::vlen;
   multi_iter<vlen, cmplx<T>, T> it(in, out, axis);
   size_t len=out.shape(axis);
+#if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
       {
@@ -2313,6 +2287,7 @@ template<typename T> NOINLINE void pocketfft_general_c2r(
         for (size_t j=0; j<vlen; ++j)
           it.out(j,i) = tdatav[i][j];
       }
+#endif
   while (it.remaining()>0)
     {
     it.advance(1);
@@ -2329,6 +2304,58 @@ template<typename T> NOINLINE void pocketfft_general_c2r(
     plan.backward(tdata, fct);
     for (size_t i=0; i<len; ++i)
       it.out(i) = tdata[i];
+    }
+  }
+
+template<typename T> NOINLINE void pocketfft_general_r(
+  const ndarr<T> &in, ndarr<T> &out, int axis, bool forward, T fct)
+  {
+  auto storage = alloc_tmp<T>(in.shape(), in.shape(axis), sizeof(T));
+
+  constexpr int vlen = VTYPE<T>::vlen;
+  multi_iter<vlen, T, T> it(in, out, axis);
+  size_t len=it.length_in();
+  pocketfft_r<T> plan(len);
+#if defined(HAVE_VECSUPPORT)
+  if (vlen>1)
+    while (it.remaining()>=vlen)
+      {
+      using vtype = typename VTYPE<T>::type;
+      it.advance(vlen);
+      auto tdatav = (vtype *)storage.data();
+      for (size_t i=0; i<len; ++i)
+        for (size_t j=0; j<vlen; ++j)
+          tdatav[i][j] = it.in(j,i);
+      forward ? plan.forward (tdatav, fct)
+              : plan.backward(tdatav, fct);
+      for (size_t i=0; i<len; ++i)
+        for (size_t j=0; j<vlen; ++j)
+          it.out(j,i) = tdatav[i][j];
+      }
+#endif
+  while (it.remaining()>0)
+    {
+    it.advance(1);
+    auto tdata = (T *)storage.data();
+    if (it.inplace() && it.contiguous_out()) // fully in-place
+      forward ? plan.forward (&it.out(0), fct)
+              : plan.backward(&it.out(0), fct);
+    else if (it.contiguous_out()) // compute FFT in output location
+      {
+      for (size_t i=0; i<len; ++i)
+        it.out(i) = it.in(i);
+      forward ? plan.forward (&it.out(0), fct)
+              : plan.backward(&it.out(0), fct);
+      }
+    else
+      {
+      for (size_t i=0; i<len; ++i)
+        tdata[i] = it.in(i);
+      forward ? plan.forward (tdata, fct)
+              : plan.backward(tdata, fct);
+      for (size_t i=0; i<len; ++i)
+        it.out(i) = tdata[i];
+      }
     }
   }
 
