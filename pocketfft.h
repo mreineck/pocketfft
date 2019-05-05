@@ -2,26 +2,48 @@
 #define POCKETFFT_H
 
 #include <cstddef>
+#include <vector>
 
-/*
-ndim: number of dimensions for input and output arrays
-shape: ndim values describing the shape of input and output arrays
-stride_in: ndim values describing the stride *in bytes* from one element to
-  the next along every axis in the input array
-stride_out: ndim values describing the stride *in bytes* from one element to
-  the next along every axis in the output array
-nax: number of axes to transform. Must be <= ndim
-axes: nax values containing the axis index [0; ndim[ for every axis that should
-  be transformed. Duplicates are not allowed.
-forward: if !=0, do a forward transform, else backward
-data_in: pointer to the first element in the input array
-data_out: pointer to the first element in the output array
-fct: factor to be applied to all values in the output array
-dp: if !=0, assume double precision data, else single precision
+using shape_t = std::vector<std::size_t>;
+using stride_t = std::vector<std::ptrdiff_t>;
+
+/* General constraints on arguments:
+ - shape, stride_in and stride_out must have the same size() and must not be
+   empty.
+ - Entries in shape must be >=1.
+ - If data_in==data_out, stride_in and stride_out must have identical content.
+   These in-place transforms are fine for c2c and r2r, but not for r2c/c2r.
+ - Complex values are stored as two floating point values (re/im) that are
+   adjacent in memory.
+ - Axes are numbered from 0 to shape.size()-1, inclusively.
+ - Strides are measured in bytes, to allow maximum flexibility. Negative strides
+   are fine. Strides that lead to multiple accesses of the same memory address
+   are not allowed.
+ - The same axis must not be specified more than once in an axes argument.
+ - For r2c transforms: the length of the output array along axis is assumed
+   to be shape[axis]/2 + 1.
+ - For c2r transforms: the equality (new_size/2 == shape[axis]-1) must be
+   fulfilled, i.e. new_size must be either 2*shape[axis]-2 or 2*shape[axis]-1.
 */
-int pocketfft_complex(size_t ndim, const size_t *shape,
-  const ptrdiff_t *stride_in, const ptrdiff_t *stride_out, size_t nax,
-  const size_t *axes, int forward, const void *data_in,
-  void *data_out, double fct, int dp);
+
+void pocketfft_c2c(const shape_t &shape, const stride_t &stride_in,
+  const stride_t &stride_out, const shape_t &axes, bool forward,
+  const void *data_in, void *data_out, double fct, bool dp);
+
+void pocketfft_r2c(const shape_t &shape, const stride_t &stride_in,
+  const stride_t &stride_out, size_t axis, const void *data_in, void *data_out,
+  double fct, bool dp);
+
+void pocketfft_c2r(const shape_t &shape, size_t new_size,
+  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
+  const void *data_in, void *data_out, double fct, bool dp);
+
+void pocketfft_r2r_fftpack(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
+  bool forward, const void *data_in, void *data_out, double fct, bool dp);
+
+void pocketfft_r2r_hartley(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const void *data_in, void *data_out, double fct, bool dp);
 
 #endif

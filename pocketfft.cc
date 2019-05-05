@@ -2308,7 +2308,7 @@ template<typename T> NOINLINE void pocketfft_general_c2r(
   }
 
 template<typename T> NOINLINE void pocketfft_general_r(
-  const ndarr<T> &in, ndarr<T> &out, int axis, bool forward, T fct)
+  const ndarr<T> &in, ndarr<T> &out, size_t axis, bool forward, T fct)
   {
   auto storage = alloc_tmp<T>(in.shape(), in.shape(axis), sizeof(T));
 
@@ -2363,46 +2363,94 @@ template<typename T> NOINLINE void pocketfft_general_r(
 
 #include "pocketfft.h"
 
-int pocketfft_complex(size_t ndim, const size_t *shape,
-  const ptrdiff_t *stride_in, const ptrdiff_t *stride_out, size_t nax,
-  const size_t *axes, int forward, const void *data_in,
-  void *data_out, double fct, int dp)
+void pocketfft_c2c(const shape_t &shape, const stride_t &stride_in,
+  const stride_t &stride_out, const shape_t &axes, bool forward,
+  const void *data_in, void *data_out, double fct, bool dp)
   {
-  try {
-    if (nax>ndim) return 1;
-    shape_t xshape(ndim), xaxes(nax);
-    stride_t xstride_in(ndim), xstride_out(ndim);
-    for (size_t i=0; i<ndim; ++i)
-      {
-      xshape[i] = shape[i];
-      xstride_in[i] = stride_in[i];
-      xstride_out[i] = stride_out[i];
-      }
-    for (size_t i=0; i<nax; ++i)
-      xaxes[i] = axes[i];
-    if (dp)
-      {
-      ndarr<cmplx<double>> ain(data_in, xshape, xstride_in);
-      ndarr<cmplx<double>> aout(data_out, xshape, xstride_out);
-      pocketfft_general_c(ain, aout, xaxes, bool(forward), fct);
-      }
-    else
-      {
-      ndarr<cmplx<float>> ain(data_in, xshape, xstride_in);
-      ndarr<cmplx<float>> aout(data_out, xshape, xstride_out);
-      pocketfft_general_c(ain, aout, xaxes, bool(forward), float(fct));
-      }
+  if (dp)
+    {
+    ndarr<cmplx<double>> ain(data_in, shape, stride_in);
+    ndarr<cmplx<double>> aout(data_out, shape, stride_out);
+    pocketfft_general_c(ain, aout, axes, forward, fct);
     }
-  catch(...) {
-    return 1;
+  else
+    {
+    ndarr<cmplx<float>> ain(data_in, shape, stride_in);
+    ndarr<cmplx<float>> aout(data_out, shape, stride_out);
+    pocketfft_general_c(ain, aout, axes, forward, float(fct));
     }
-  return 0;
   }
 
-void pocketfft_r2c(size_t ndim, const size_t *shape,
-  const ptrdiff_t *stride_in, const ptrdiff_t *stride_out, size_t axis,
-  const void *data_in, void *data_out, double fct, int dp);
+void pocketfft_r2c(const shape_t &shape, const stride_t &stride_in,
+  const stride_t &stride_out, size_t axis, const void *data_in, void *data_out,
+  double fct, bool dp)
+  {
+  if (dp)
+    {
+    ndarr<double> ain(data_in, shape, stride_in);
+    ndarr<cmplx<double>> aout(data_out, shape, stride_out);
+    pocketfft_general_r2c(ain, aout, axis, fct);
+    }
+  else
+    {
+    ndarr<float> ain(data_in, shape, stride_in);
+    ndarr<cmplx<float>> aout(data_out, shape, stride_out);
+    pocketfft_general_r2c(ain, aout, axis, float(fct));
+    }
+  }
 
-void pocketfft_c2r(size_t ndim, const size_t *shape, size_t new_size,
-  const ptrdiff_t *stride_in, const ptrdiff_t *stride_out, size_t axis,
-  const void *data_in, void *data_out, double fct, int dp);
+void pocketfft_c2r(const shape_t &shape, size_t new_size,
+  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
+  const void *data_in, void *data_out, double fct, bool dp)
+  {
+  shape_t shape_out(shape);
+  shape_out[axis] = new_size;
+  if (dp)
+    {
+    ndarr<cmplx<double>> ain(data_in, shape, stride_in);
+    ndarr<double> aout(data_out, shape_out, stride_out);
+    pocketfft_general_c2r(ain, aout, axis, fct);
+    }
+  else
+    {
+    ndarr<cmplx<float>> ain(data_in, shape, stride_in);
+    ndarr<float> aout(data_out, shape_out, stride_out);
+    pocketfft_general_c2r(ain, aout, axis, float(fct));
+    }
+  }
+
+void pocketfft_r2r_fftpack(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
+  bool forward, const void *data_in, void *data_out, double fct, bool dp)
+  {
+  if (dp)
+    {
+    ndarr<double> ain(data_in, shape, stride_in);
+    ndarr<double> aout(data_out, shape, stride_out);
+    pocketfft_general_r(ain, aout, axis, forward, fct);
+    }
+  else
+    {
+    ndarr<float> ain(data_in, shape, stride_in);
+    ndarr<float> aout(data_out, shape, stride_out);
+    pocketfft_general_r(ain, aout, axis, forward, float(fct));
+    }
+  }
+
+void pocketfft_r2r_hartley(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const void *data_in, void *data_out, double fct, bool dp)
+  {
+  if (dp)
+    {
+    ndarr<double> ain(data_in, shape, stride_in);
+    ndarr<double> aout(data_out, shape, stride_out);
+    pocketfft_general_hartley(ain, aout, axes, fct);
+    }
+  else
+    {
+    ndarr<float> ain(data_in, shape, stride_in);
+    ndarr<float> aout(data_out, shape, stride_out);
+    pocketfft_general_hartley(ain, aout, axes, float(fct));
+    }
+  }
