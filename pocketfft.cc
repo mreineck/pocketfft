@@ -12,6 +12,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <algorithm>
 #include <iostream>
 #include <memory>
@@ -25,9 +26,9 @@
 #define restrict
 #endif
 
-using namespace std;
+namespace pocketfft_private {
 
-namespace {
+using namespace std;
 
 template<typename T> struct arr
   {
@@ -36,7 +37,17 @@ template<typename T> struct arr
     size_t sz;
 
     static T *ralloc(size_t num)
-      { return (T *)aligned_alloc(64,num*sizeof(T)); }
+      {
+#if 0
+      return (T *)aligned_alloc(64,num*sizeof(T));
+#else
+      void *res(nullptr);
+      if (num>0)
+        if (posix_memalign(&res, 64, num*sizeof(T))!=0)
+          throw bad_alloc();
+      return reinterpret_cast<T *>(res);
+#endif
+      }
     static void dealloc(T *ptr)
       { free(ptr); }
 
@@ -455,6 +466,10 @@ template<bool bwd, typename T> NOINLINE void pass3 (size_t ido, size_t l1,
       }
   }
 
+#undef PARTSTEP3b
+#undef PARTSTEP3a
+#undef PREP3
+
 template<bool bwd, typename T> NOINLINE void pass4 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
@@ -559,6 +574,10 @@ template<bool bwd, typename T> NOINLINE void pass5 (size_t ido, size_t l1,
       }
   }
 
+#undef PARTSTEP5b
+#undef PARTSTEP5a
+#undef PREP5
+
 #define PREP7(idx) \
         T t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7; \
         PMC (t2,t7,CC(idx,1,k),CC(idx,6,k)); \
@@ -623,6 +642,11 @@ template<bool bwd, typename T> NOINLINE void pass7(size_t ido, size_t l1,
         }
       }
   }
+
+#undef PARTSTEP7
+#undef PARTSTEP7a0
+#undef PARTSTEP7a
+#undef PREP7
 
 #define PREP11(idx) \
         T t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7, t8, t9, t10, t11; \
@@ -699,6 +723,11 @@ template<bool bwd, typename T> NOINLINE void pass11 (size_t ido, size_t l1,
         }
       }
   }
+
+#undef PARTSTEP11
+#undef PARTSTEP11a0
+#undef PARTSTEP11a
+#undef PREP11
 
 #define CX(a,b,c) cc[(a)+ido*((b)+l1*(c))]
 #define CX2(a,b) cc[(a)+idl1*(b)]
@@ -854,13 +883,12 @@ template<bool bwd, typename T> NOINLINE void pass_all(T c[], T0 fact)
 #undef WA
 #undef CC
 #undef CH
-#undef PMC
 
   public:
-    template<typename T> NOINLINE void forward(T c[], T0 fct)
+    template<typename T> void forward(T c[], T0 fct)
       { pass_all<false>(c, fct); }
 
-    template<typename T> NOINLINE void backward(T c[], T0 fct)
+    template<typename T> void backward(T c[], T0 fct)
       { pass_all<true>(c, fct); }
 
   private:
@@ -1431,8 +1459,8 @@ template<typename T>NOINLINE void radb5(size_t ido, size_t l1,
       }
   }
 
-#undef CC
 #undef CH
+#undef CC
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define C1(a,b,c) cc[(a)+ido*((b)+l1*(c))]
@@ -1569,10 +1597,11 @@ template<typename T> NOINLINE void radbg(size_t ido, size_t ip, size_t l1,
 #undef C2
 #undef CH2
 
-#undef CC
 #undef CH
-#undef PM
+#undef CC
+
 #undef MULPM
+#undef PM
 #undef WA
 
 template<typename T> void copy_and_norm(T *c, T *p1, size_t n, T0 fct)
@@ -1810,10 +1839,10 @@ template<typename T0> class fftblue
       plan.forward(bkf,1.);
       }
 
-    template<typename T> NOINLINE void backward(cmplx<T> c[], T0 fct)
+    template<typename T> void backward(cmplx<T> c[], T0 fct)
       { fft<true>(c,fct); }
 
-    template<typename T> NOINLINE void forward(cmplx<T> c[], T0 fct)
+    template<typename T> void forward(cmplx<T> c[], T0 fct)
       { fft<false>(c,fct); }
 
     template<typename T> NOINLINE void backward_r(T c[], T0 fct)
@@ -1870,13 +1899,13 @@ template<typename T0> class pocketfft_c
         packplan=unique_ptr<cfftp<T0>>(new cfftp<T0>(length));
       }
 
-    template<typename T> NOINLINE void backward(T c[], T0 fct)
+    template<typename T> void backward(T c[], T0 fct)
       {
       packplan ? packplan->backward((cmplx<T> *)c,fct)
                : blueplan->backward((cmplx<T> *)c,fct);
       }
 
-    template<typename T> NOINLINE void forward(T c[], T0 fct)
+    template<typename T> void forward(T c[], T0 fct)
       {
       packplan ? packplan->forward((cmplx<T> *)c,fct)
                : blueplan->forward((cmplx<T> *)c,fct);
@@ -1915,13 +1944,13 @@ template<typename T0> class pocketfft_r
         packplan=unique_ptr<rfftp<T0>>(new rfftp<T0>(length));
       }
 
-    template<typename T> NOINLINE void backward(T c[], T0 fct)
+    template<typename T> void backward(T c[], T0 fct)
       {
       packplan ? packplan->backward(c,fct)
                : blueplan->backward_r(c,fct);
       }
 
-    template<typename T> NOINLINE void forward(T c[], T0 fct)
+    template<typename T> void forward(T c[], T0 fct)
       {
       packplan ? packplan->forward(c,fct)
                : blueplan->forward_r(c,fct);
@@ -2359,7 +2388,9 @@ template<typename T> NOINLINE void pocketfft_general_r(
     }
   }
 
-} // unnamed namespace
+#undef HAVE_VECSUPPORT
+
+} // namespace pocketfft_private
 
 #include "pocketfft.h"
 
@@ -2367,6 +2398,7 @@ void pocketfft_c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
   const void *data_in, void *data_out, double fct, bool dp)
   {
+  using namespace pocketfft_private;
   if (dp)
     {
     ndarr<cmplx<double>> ain(data_in, shape, stride_in);
@@ -2385,6 +2417,7 @@ void pocketfft_r2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, size_t axis, const void *data_in, void *data_out,
   double fct, bool dp)
   {
+  using namespace pocketfft_private;
   if (dp)
     {
     ndarr<double> ain(data_in, shape, stride_in);
@@ -2403,6 +2436,7 @@ void pocketfft_c2r(const shape_t &shape, size_t new_size,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   const void *data_in, void *data_out, double fct, bool dp)
   {
+  using namespace pocketfft_private;
   shape_t shape_out(shape);
   shape_out[axis] = new_size;
   if (dp)
@@ -2423,6 +2457,7 @@ void pocketfft_r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   bool forward, const void *data_in, void *data_out, double fct, bool dp)
   {
+  using namespace pocketfft_private;
   if (dp)
     {
     ndarr<double> ain(data_in, shape, stride_in);
@@ -2441,6 +2476,7 @@ void pocketfft_r2r_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const void *data_in, void *data_out, double fct, bool dp)
   {
+  using namespace pocketfft_private;
   if (dp)
     {
     ndarr<double> ain(data_in, shape, stride_in);
