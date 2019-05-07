@@ -34,8 +34,16 @@ void pocketfft_r2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, size_t axis, const void *data_in, void *data_out,
   double fct, bool dp);
 
+void pocketfft_r2c(const shape_t &shape, const stride_t &stride_in,
+  const stride_t &stride_out, const shape_t &axes, const void *data_in,
+  void *data_out, double fct, bool dp);
+
 void pocketfft_c2r(const shape_t &shape, size_t new_size,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
+  const void *data_in, void *data_out, double fct, bool dp);
+
+void pocketfft_c2r(const shape_t &shape, size_t new_size,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const void *data_in, void *data_out, double fct, bool dp);
 
 void pocketfft_r2r_fftpack(const shape_t &shape,

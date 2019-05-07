@@ -38,15 +38,21 @@ template<typename T> struct arr
 
     static T *ralloc(size_t num)
       {
+      if (num==0) return nullptr;
+#ifdef POCKETFFT_NO_VECTORS
+      void *res = malloc(num*sizeof(T));
+      if (!res) throw bad_alloc();
+#else
 #if 0
-      return (T *)aligned_alloc(64,num*sizeof(T));
+      void *res = aligned_alloc(64,num*sizeof(T));
+      if (!res) throw bad_alloc();
 #else
       void *res(nullptr);
-      if (num>0)
-        if (posix_memalign(&res, 64, num*sizeof(T))!=0)
-          throw bad_alloc();
-      return reinterpret_cast<T *>(res);
+      if (posix_memalign(&res, 64, num*sizeof(T))!=0)
+        throw bad_alloc();
 #endif
+#endif
+      return reinterpret_cast<T *>(res);
       }
     static void dealloc(T *ptr)
       { free(ptr); }
@@ -2062,6 +2068,7 @@ template<size_t N, typename Ti, typename To> class multi_iter
   };
 
 
+#ifndef POCKETFFT_NO_VECTORS
 #if (defined(__AVX512F__))
 #define HAVE_VECSUPPORT
 constexpr int VBYTELEN=64;
@@ -2071,6 +2078,7 @@ constexpr int VBYTELEN=32;
 #elif (defined(__SSE2__))
 #define HAVE_VECSUPPORT
 constexpr int VBYTELEN=16;
+#endif
 #endif
 
 #if defined(HAVE_VECSUPPORT)
@@ -2432,6 +2440,21 @@ void pocketfft_r2c(const shape_t &shape, const stride_t &stride_in,
     }
   }
 
+void pocketfft_r2c(const shape_t &shape, const stride_t &stride_in,
+  const stride_t &stride_out, const shape_t &axes, const void *data_in,
+  void *data_out, double fct, bool dp)
+  {
+  pocketfft_r2c(shape, stride_in, stride_out, axes.back(), data_in, data_out,
+    fct, dp);
+  if (axes.size()==1) return;
+
+  shape_t shape_out(shape);
+  shape_out[axes.back()] = shape[axes.back()]/2 + 1;
+  auto newaxes = shape_t{axes.begin(), --axes.end()};
+  pocketfft_c2c(shape_out, stride_out, stride_out, newaxes, true,
+    data_out, data_out, 1., dp);
+  }
+
 void pocketfft_c2r(const shape_t &shape, size_t new_size,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   const void *data_in, void *data_out, double fct, bool dp)
@@ -2451,6 +2474,30 @@ void pocketfft_c2r(const shape_t &shape, size_t new_size,
     ndarr<float> aout(data_out, shape_out, stride_out);
     pocketfft_general_c2r(ain, aout, axis, float(fct));
     }
+  }
+
+void pocketfft_c2r(const shape_t &shape, size_t new_size,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const void *data_in, void *data_out, double fct, bool dp)
+  {
+  if (axes.size()==1)
+    {
+    pocketfft_c2r(shape, new_size, stride_in, stride_out, axes[0],
+    data_in, data_out, fct, dp);
+    return;
+    }
+  using namespace pocketfft_private;
+  auto nval = prod(shape);
+  stride_t stride_inter(shape.size());
+  stride_inter.back() = dp ? sizeof(cmplx<double>) : sizeof(cmplx<float>);
+  for (int i=shape.size()-2; i>=0; --i)
+    stride_inter[i] = stride_inter[i+1]*shape[i+1];
+  arr<char> tmp(nval*(dp ? sizeof(cmplx<double>) : sizeof(cmplx<float>)));
+  auto newaxes = shape_t{++axes.begin(), axes.end()};
+  pocketfft_c2c(shape, stride_in, stride_inter, newaxes, true,
+    data_in, tmp.data(), 1., dp);
+  pocketfft_c2r(shape, new_size, stride_inter, stride_out, axes.back(),
+    tmp.data(), data_out, fct, dp);
   }
 
 void pocketfft_r2r_fftpack(const shape_t &shape,
