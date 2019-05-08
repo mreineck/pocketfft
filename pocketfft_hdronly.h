@@ -29,9 +29,14 @@
 #define restrict
 #endif
 
-namespace pocketfft_private {
+namespace pocketfft {
 
 using namespace std;
+
+using shape_t = vector<size_t>;
+using stride_t = vector<ptrdiff_t>;
+
+namespace detail {
 
 template<typename T> struct arr
   {
@@ -194,7 +199,7 @@ template<typename T> class sincos_2pibyn
         }
       }
 
-    NOINLINE void calc_first_quadrant(size_t n, T * restrict res)
+    void calc_first_quadrant(size_t n, T * restrict res)
       {
       T * restrict p = res+n;
       calc_first_octant(n<<1, p);
@@ -214,7 +219,7 @@ template<typename T> class sincos_2pibyn
         }
       }
 
-    NOINLINE void calc_first_half(size_t n, T * restrict res)
+    void calc_first_half(size_t n, T * restrict res)
       {
       int ndone=(n+1)>>1;
       T * p = res+n-1;
@@ -241,7 +246,7 @@ template<typename T> class sincos_2pibyn
         }
       }
 
-    NOINLINE void fill_first_quadrant(size_t n, T * restrict res)
+    void fill_first_quadrant(size_t n, T * restrict res)
       {
       const double hsqt2 = 0.707106781186547524400844362104849;
       size_t quart = n>>2;
@@ -271,7 +276,7 @@ template<typename T> class sincos_2pibyn
           }
       }
 
-    NOINLINE void fill_second_half(size_t n, T * restrict res)
+    void fill_second_half(size_t n, T * restrict res)
       {
       if ((n&1)==0)
         for (size_t i=0; i<n; ++i)
@@ -400,7 +405,7 @@ template<typename T0> class cfftp
       fct[nfct++].fct = factor;
       }
 
-template<bool bwd, typename T> NOINLINE void pass2 (size_t ido, size_t l1,
+template<bool bwd, typename T> void pass2 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=2;
@@ -444,7 +449,7 @@ template<bool bwd, typename T> NOINLINE void pass2 (size_t ido, size_t l1,
         CH(i,k,u1) = da.template special_mul<bwd>(WA(u1-1,i)); \
         CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
         }
-template<bool bwd, typename T> NOINLINE void pass3 (size_t ido, size_t l1,
+template<bool bwd, typename T> void pass3 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=3;
@@ -475,7 +480,7 @@ template<bool bwd, typename T> NOINLINE void pass3 (size_t ido, size_t l1,
 #undef PARTSTEP3a
 #undef PREP3
 
-template<bool bwd, typename T> NOINLINE void pass4 (size_t ido, size_t l1,
+template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=4;
@@ -546,7 +551,7 @@ template<bool bwd, typename T> NOINLINE void pass4 (size_t ido, size_t l1,
         CH(i,k,u1) = da.template special_mul<bwd>(WA(u1-1,i)); \
         CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
         }
-template<bool bwd, typename T> NOINLINE void pass5 (size_t ido, size_t l1,
+template<bool bwd, typename T> void pass5 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=5;
@@ -610,7 +615,7 @@ template<bool bwd, typename T> NOINLINE void pass5 (size_t ido, size_t l1,
         CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
         }
 
-template<bool bwd, typename T> NOINLINE void pass7(size_t ido, size_t l1,
+template<bool bwd, typename T> void pass7(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=7;
@@ -681,7 +686,7 @@ template<bool bwd, typename T> NOINLINE void pass7(size_t ido, size_t l1,
         CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
         }
 
-template<bool bwd, typename T> NOINLINE void pass11 (size_t ido, size_t l1,
+template<bool bwd, typename T> void pass11 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   const size_t cdim=11;
@@ -738,7 +743,7 @@ template<bool bwd, typename T> NOINLINE void pass11 (size_t ido, size_t l1,
 #define CX2(a,b) cc[(a)+idl1*(b)]
 #define CH2(a,b) ch[(a)+idl1*(b)]
 
-template<bool bwd, typename T> NOINLINE void passg (size_t ido, size_t ip,
+template<bool bwd, typename T> void passg (size_t ido, size_t ip,
   size_t l1, T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa,
   const cmplx<T0> * restrict csarr)
   {
@@ -839,7 +844,7 @@ template<bool bwd, typename T> NOINLINE void passg (size_t ido, size_t ip,
 #undef CX2
 #undef CX
 
-template<bool bwd, typename T> NOINLINE void pass_all(T c[], T0 fact)
+template<bool bwd, typename T> void pass_all(T c[], T0 fact)
   {
   if (length==1) { c[0]*=fact; return; }
   size_t l1=1;
@@ -924,7 +929,7 @@ template<bool bwd, typename T> NOINLINE void pass_all(T c[], T0 fact)
       if (len>1) add_factor(len);
       }
 
-    NOINLINE size_t twsize() const
+    size_t twsize() const
       {
       size_t twsize=0, l1=1;
       for (size_t k=0; k<nfct; ++k)
@@ -938,7 +943,7 @@ template<bool bwd, typename T> NOINLINE void pass_all(T c[], T0 fact)
       return twsize;
       }
 
-    NOINLINE void comp_twiddle()
+    void comp_twiddle()
       {
       sincos_2pibyn<T0> twid(length, false);
       auto twiddle = twid.cdata();
@@ -1006,7 +1011,7 @@ template<typename T0> class rfftp
 #define CC(a,b,c) cc[(a)+ido*((b)+l1*(c))]
 #define CH(a,b,c) ch[(a)+ido*((b)+cdim*(c))]
 
-template<typename T> NOINLINE void radf2 (size_t ido, size_t l1,
+template<typename T> void radf2 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=2;
@@ -1031,7 +1036,7 @@ template<typename T> NOINLINE void radf2 (size_t ido, size_t l1,
       }
   }
 
-template<typename T> NOINLINE void radf3(size_t ido, size_t l1,
+template<typename T> void radf3(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=3;
@@ -1065,7 +1070,7 @@ template<typename T> NOINLINE void radf3(size_t ido, size_t l1,
       }
   }
 
-template<typename T> NOINLINE void radf4(size_t ido, size_t l1,
+template<typename T> void radf4(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=4;
@@ -1106,7 +1111,7 @@ template<typename T> NOINLINE void radf4(size_t ido, size_t l1,
       }
   }
 
-template<typename T> NOINLINE void radf5(size_t ido, size_t l1,
+template<typename T> void radf5(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=5;
@@ -1161,7 +1166,7 @@ template<typename T> NOINLINE void radf5(size_t ido, size_t l1,
 #define CH2(a,b) ch[(a)+idl1*(b)]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
-template<typename T> NOINLINE void radfg(size_t ido, size_t ip, size_t l1,
+template<typename T> void radfg(size_t ido, size_t ip, size_t l1,
   T * restrict cc, T * restrict ch, const T0 * restrict wa,
   const T0 * restrict csarr)
   {
@@ -1306,7 +1311,7 @@ template<typename T> NOINLINE void radfg(size_t ido, size_t ip, size_t l1,
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 
-template<typename T> NOINLINE void radb2(size_t ido, size_t l1, const T * restrict cc,
+template<typename T> void radb2(size_t ido, size_t l1, const T * restrict cc,
   T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=2;
@@ -1331,7 +1336,7 @@ template<typename T> NOINLINE void radb2(size_t ido, size_t l1, const T * restri
       }
   }
 
-template<typename T> NOINLINE void radb3(size_t ido, size_t l1,
+template<typename T> void radb3(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=3;
@@ -1366,7 +1371,7 @@ template<typename T> NOINLINE void radb3(size_t ido, size_t l1,
       }
   }
 
-template<typename T> NOINLINE void radb4(size_t ido, size_t l1,
+template<typename T> void radb4(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=4;
@@ -1412,7 +1417,7 @@ template<typename T> NOINLINE void radb4(size_t ido, size_t l1,
       }
   }
 
-template<typename T>NOINLINE void radb5(size_t ido, size_t l1,
+template<typename T> void radb5(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=5;
@@ -1472,7 +1477,7 @@ template<typename T>NOINLINE void radb5(size_t ido, size_t l1,
 #define C2(a,b) cc[(a)+idl1*(b)]
 #define CH2(a,b) ch[(a)+idl1*(b)]
 
-template<typename T> NOINLINE void radbg(size_t ido, size_t ip, size_t l1,
+template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
   T * restrict cc, T * restrict ch, const T0 * restrict wa,
   const T0 * restrict csarr)
   {
@@ -1627,7 +1632,7 @@ template<typename T> void copy_and_norm(T *c, T *p1, size_t n, T0 fct)
 
   public:
 
-template<typename T> NOINLINE void forward(T c[], T0 fact)
+template<typename T> void forward(T c[], T0 fact)
   {
   if (length==1) { c[0]*=fact; return; }
   size_t n=length;
@@ -1659,7 +1664,7 @@ template<typename T> NOINLINE void forward(T c[], T0 fact)
   copy_and_norm(c,p1,n,fact);
   }
 
-template<typename T> NOINLINE void backward(T c[], T0 fact)
+template<typename T> void backward(T c[], T0 fact)
   {
   if (length==1) { c[0]*=fact; return; }
   size_t n=length;
@@ -1729,7 +1734,7 @@ size_t twsize() const
   return twsz;
   }
 
-NOINLINE void comp_twiddle()
+void comp_twiddle()
   {
   sincos_2pibyn<T0> twid(length, true);
   size_t l1=1;
@@ -1791,8 +1796,7 @@ template<typename T0> class fftblue
     arr<cmplx<T0>> mem;
     cmplx<T0> *bk, *bkf;
 
-    template<bool bwd, typename T> NOINLINE
-    void fft(cmplx<T> c[], T0 fct)
+    template<bool bwd, typename T> void fft(cmplx<T> c[], T0 fct)
       {
       arr<cmplx<T>> akf(n2);
 
@@ -1850,7 +1854,7 @@ template<typename T0> class fftblue
     template<typename T> void forward(cmplx<T> c[], T0 fct)
       { fft<false>(c,fct); }
 
-    template<typename T> NOINLINE void backward_r(T c[], T0 fct)
+    template<typename T> void backward_r(T c[], T0 fct)
       {
       arr<cmplx<T>> tmp(n);
       tmp[0].Set(c[0],c[0]*0);
@@ -1863,7 +1867,7 @@ template<typename T0> class fftblue
         c[m] = tmp[m].r;
       }
 
-    template<typename T> NOINLINE void forward_r(T c[], T0 fct)
+    template<typename T> void forward_r(T c[], T0 fct)
       {
       arr<cmplx<T>> tmp(n);
       for (size_t m=0; m<n; ++m)
@@ -1904,13 +1908,13 @@ template<typename T0> class pocketfft_c
         packplan=unique_ptr<cfftp<T0>>(new cfftp<T0>(length));
       }
 
-    template<typename T> void backward(T c[], T0 fct)
+    template<typename T> NOINLINE void backward(T c[], T0 fct)
       {
       packplan ? packplan->backward((cmplx<T> *)c,fct)
                : blueplan->backward((cmplx<T> *)c,fct);
       }
 
-    template<typename T> void forward(T c[], T0 fct)
+    template<typename T> NOINLINE void forward(T c[], T0 fct)
       {
       packplan ? packplan->forward((cmplx<T> *)c,fct)
                : blueplan->forward((cmplx<T> *)c,fct);
@@ -1949,13 +1953,13 @@ template<typename T0> class pocketfft_r
         packplan=unique_ptr<rfftp<T0>>(new rfftp<T0>(length));
       }
 
-    template<typename T> void backward(T c[], T0 fct)
+    template<typename T> NOINLINE void backward(T c[], T0 fct)
       {
       packplan ? packplan->backward(c,fct)
                : blueplan->backward_r(c,fct);
       }
 
-    template<typename T> void forward(T c[], T0 fct)
+    template<typename T> NOINLINE void forward(T c[], T0 fct)
       {
       packplan ? packplan->forward(c,fct)
                : blueplan->forward_r(c,fct);
@@ -1967,9 +1971,6 @@ template<typename T0> class pocketfft_r
 //
 // multi-D infrastructure
 //
-
-using shape_t = vector<size_t>;
-using stride_t = vector<ptrdiff_t>;
 
 size_t prod(const shape_t &shape)
   {
@@ -2397,34 +2398,33 @@ template<typename T> NOINLINE void pocketfft_general_r(
 
 #undef HAVE_VECSUPPORT
 
-} // namespace pocketfft_private
+} // namespace detail
 
-#include "pocketfft.h"
-template<typename T> void pocketfft_c2c(const shape_t &shape,
+template<typename T> void c2c(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   bool forward, const void *data_in, void *data_out, T fct)
   {
-  using namespace pocketfft_private;
+  using namespace detail;
   ndarr<cmplx<T>> ain(data_in, shape, stride_in);
   ndarr<cmplx<T>> aout(data_out, shape, stride_out);
   pocketfft_general_c(ain, aout, axes, forward, fct);
   }
 
-template<typename T> void pocketfft_r2c(const shape_t &shape,
+template<typename T> void r2c(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   const void *data_in, void *data_out, T fct)
   {
-  using namespace pocketfft_private;
+  using namespace detail;
   ndarr<T> ain(data_in, shape, stride_in);
   ndarr<cmplx<T>> aout(data_out, shape, stride_out);
   pocketfft_general_r2c(ain, aout, axis, fct);
   }
 
-template<typename T> void pocketfft_c2r(const shape_t &shape, size_t new_size,
+template<typename T> void c2r(const shape_t &shape, size_t new_size,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   const void *data_in, void *data_out, T fct)
   {
-  using namespace pocketfft_private;
+  using namespace detail;
   shape_t shape_out(shape);
   shape_out[axis] = new_size;
   ndarr<cmplx<T>> ain(data_in, shape, stride_in);
@@ -2432,24 +2432,26 @@ template<typename T> void pocketfft_c2r(const shape_t &shape, size_t new_size,
   pocketfft_general_c2r(ain, aout, axis, fct);
   }
 
-template<typename T> void pocketfft_r2r_fftpack(const shape_t &shape,
+template<typename T> void r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   bool forward, const void *data_in, void *data_out, T fct)
   {
-  using namespace pocketfft_private;
+  using namespace detail;
   ndarr<T> ain(data_in, shape, stride_in);
   ndarr<T> aout(data_out, shape, stride_out);
   pocketfft_general_r(ain, aout, axis, forward, fct);
   }
 
-template<typename T> void pocketfft_r2r_hartley(const shape_t &shape,
+template<typename T> void r2r_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const void *data_in, void *data_out, T fct)
   {
-  using namespace pocketfft_private;
+  using namespace detail;
   ndarr<T> ain(data_in, shape, stride_in);
   ndarr<T> aout(data_out, shape, stride_out);
   pocketfft_general_hartley(ain, aout, axes, fct);
   }
+
+} // namespace pocketfft
 
 #endif // POCKETFFT_HDRONLY_H
