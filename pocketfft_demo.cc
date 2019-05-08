@@ -1,8 +1,11 @@
 #include <complex>
 #include <vector>
-#include "pocketfft.h"
+#include "pocketfft_hdronly.h"
 
 using namespace std;
+
+using pocketfft_private::shape_t;
+using pocketfft_private::stride_t;
 
 int main()
   {
@@ -26,12 +29,12 @@ int main()
   for (size_t i=0; i<shape.size(); ++i)
     axes.push_back(i);
   for (size_t rep=0; rep<10; ++rep)
-    pocketfft_c2c(shape, stride, stride, axes, true,
-      data.data(), data.data(), 1., true);
+    pocketfft_c2c<double>(shape, stride, stride, axes, true,
+      data.data(), data.data(), 1.);
   for (size_t rep=0; rep<10; ++rep)
-    pocketfft_r2r_fftpack(shape, stride, stride, 0, true,
-      data.data(), data.data(), 1., true);
+    pocketfft_r2r_fftpack<double>(shape, stride, stride, 0, true,
+      data.data(), data.data(), 1.);
   for (size_t rep=0; rep<10; ++rep)
-    pocketfft_r2r_hartley(shape, stride, stride, axes,
-      data.data(), data.data(), 1., true);
+    pocketfft_r2r_hartley<double>(shape, stride, stride, axes,
+      data.data(), data.data(), 1.);
   }
