@@ -320,60 +320,71 @@ template<typename T> class sincos_2pibyn
       { return reinterpret_cast<const cmplx<T> *>(data.data()); }
   };
 
-NOINLINE size_t largest_prime_factor (size_t n)
+struct util // hack to avoid duplicate symbols
   {
-  size_t res=1;
-  while ((n&1)==0)
-    { res=2; n>>=1; }
-
-  size_t limit=size_t(sqrt(n+0.01));
-  for (size_t x=3; x<=limit; x+=2)
-  while ((n/x)*x==n)
+  static NOINLINE size_t largest_prime_factor (size_t n)
     {
-    res=x;
-    n/=x;
-    limit=size_t(sqrt(n+0.01));
+    size_t res=1;
+    while ((n&1)==0)
+      { res=2; n>>=1; }
+
+    size_t limit=size_t(sqrt(n+0.01));
+    for (size_t x=3; x<=limit; x+=2)
+    while ((n/x)*x==n)
+      {
+      res=x;
+      n/=x;
+      limit=size_t(sqrt(n+0.01));
+      }
+    if (n>1) res=n;
+
+    return res;
     }
-  if (n>1) res=n;
 
-  return res;
-  }
-
-NOINLINE double cost_guess (size_t n)
-  {
-  const double lfp=1.1; // penalty for non-hardcoded larger factors
-  size_t ni=n;
-  double result=0.;
-  while ((n&1)==0)
-    { result+=2; n>>=1; }
-
-  size_t limit=size_t(sqrt(n+0.01));
-  for (size_t x=3; x<=limit; x+=2)
-  while ((n/x)*x==n)
+  static NOINLINE double cost_guess (size_t n)
     {
-    result+= (x<=5) ? x : lfp*x; // penalize larger prime factors
-    n/=x;
-    limit=size_t(sqrt(n+0.01));
+    const double lfp=1.1; // penalty for non-hardcoded larger factors
+    size_t ni=n;
+    double result=0.;
+    while ((n&1)==0)
+      { result+=2; n>>=1; }
+
+    size_t limit=size_t(sqrt(n+0.01));
+    for (size_t x=3; x<=limit; x+=2)
+    while ((n/x)*x==n)
+      {
+      result+= (x<=5) ? x : lfp*x; // penalize larger prime factors
+      n/=x;
+      limit=size_t(sqrt(n+0.01));
+      }
+    if (n>1) result+=(n<=5) ? n : lfp*n;
+
+    return result*ni;
     }
-  if (n>1) result+=(n<=5) ? n : lfp*n;
 
-  return result*ni;
-  }
+  /* returns the smallest composite of 2, 3, 5, 7 and 11 which is >= n */
+  static NOINLINE size_t good_size(size_t n)
+    {
+    if (n<=12) return n;
 
-/* returns the smallest composite of 2, 3, 5, 7 and 11 which is >= n */
-NOINLINE size_t good_size(size_t n)
-  {
-  if (n<=12) return n;
+    size_t bestfac=2*n;
+    for (size_t f2=1; f2<bestfac; f2*=2)
+      for (size_t f23=f2; f23<bestfac; f23*=3)
+        for (size_t f235=f23; f235<bestfac; f235*=5)
+          for (size_t f2357=f235; f2357<bestfac; f2357*=7)
+            for (size_t f235711=f2357; f235711<bestfac; f235711*=11)
+              if (f235711>=n) bestfac=f235711;
+    return bestfac;
+    }
 
-  size_t bestfac=2*n;
-  for (size_t f2=1; f2<bestfac; f2*=2)
-    for (size_t f23=f2; f23<bestfac; f23*=3)
-      for (size_t f235=f23; f235<bestfac; f235*=5)
-        for (size_t f2357=f235; f2357<bestfac; f2357*=7)
-          for (size_t f235711=f2357; f235711<bestfac; f235711*=11)
-            if (f235711>=n) bestfac=f235711;
-  return bestfac;
-  }
+  static size_t prod(const shape_t &shape)
+    {
+    size_t res=1;
+    for (auto sz: shape)
+      res*=sz;
+    return res;
+    }
+  };
 
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
@@ -1822,7 +1833,7 @@ template<typename T0> class fftblue
 
   public:
     NOINLINE fftblue(size_t length)
-      : n(length), n2(good_size(n*2-1)), plan(n2), mem(n+n2),
+      : n(length), n2(util::good_size(n*2-1)), plan(n2), mem(n+n2),
         bk(mem.data()), bkf(mem.data()+n)
       {
       /* initialize b_k */
@@ -1894,13 +1905,13 @@ template<typename T0> class pocketfft_c
       : len(length)
       {
       if (length==0) throw runtime_error("zero-length FFT requested");
-      if ((length<50) || (largest_prime_factor(length)<=sqrt(length)))
+      if ((length<50) || (util::largest_prime_factor(length)<=sqrt(length)))
         {
         packplan=unique_ptr<cfftp<T0>>(new cfftp<T0>(length));
         return;
         }
-      double comp1 = cost_guess(length);
-      double comp2 = 2*cost_guess(good_size(2*length-1));
+      double comp1 = util::cost_guess(length);
+      double comp2 = 2*util::cost_guess(util::good_size(2*length-1));
       comp2*=1.5; /* fudge factor that appears to give good overall performance */
       if (comp2<comp1) // use Bluestein
         blueplan=unique_ptr<fftblue<T0>>(new fftblue<T0>(length));
@@ -1939,13 +1950,13 @@ template<typename T0> class pocketfft_r
       : len(length)
       {
       if (length==0) throw runtime_error("zero-length FFT requested");
-      if ((length<50) || (largest_prime_factor(length)<=sqrt(length)))
+      if ((length<50) || (util::largest_prime_factor(length)<=sqrt(length)))
         {
         packplan=unique_ptr<rfftp<T0>>(new rfftp<T0>(length));
         return;
         }
-      double comp1 = 0.5*cost_guess(length);
-      double comp2 = 2*cost_guess(good_size(2*length-1));
+      double comp1 = 0.5*util::cost_guess(length);
+      double comp2 = 2*util::cost_guess(util::good_size(2*length-1));
       comp2*=1.5; /* fudge factor that appears to give good overall performance */
       if (comp2<comp1) // use Bluestein
         blueplan=unique_ptr<fftblue<T0>>(new fftblue<T0>(length));
@@ -1972,14 +1983,6 @@ template<typename T0> class pocketfft_r
 // multi-D infrastructure
 //
 
-size_t prod(const shape_t &shape)
-  {
-  size_t res=1;
-  for (auto sz: shape)
-    res*=sz;
-  return res;
-  }
-
 template<typename T> class ndarr
   {
   private:
@@ -1996,7 +1999,7 @@ template<typename T> class ndarr
       : d(reinterpret_cast<char *>(data_)),
         cd(reinterpret_cast<const char *>(data_)), shp(shape_), str(stride_) {}
     size_t ndim() const { return shp.size(); }
-    size_t size() const { return prod(shp); }
+    size_t size() const { return util::prod(shp); }
     const shape_t &shape() const { return shp; }
     size_t shape(size_t i) const { return shp[i]; }
     const stride_t &stride() const { return str; }
@@ -2104,14 +2107,14 @@ template<> struct VTYPE<float>
 template<typename T> arr<char> alloc_tmp(const shape_t &shape,
   size_t axsize, size_t elemsize)
   {
-  auto othersize = prod(shape)/axsize;
+  auto othersize = util::prod(shape)/axsize;
   auto tmpsize = axsize*((othersize>=VTYPE<T>::vlen) ? VTYPE<T>::vlen : 1);
   return arr<char>(tmpsize*elemsize);
   }
 template<typename T> arr<char> alloc_tmp(const shape_t &shape,
   const shape_t &axes, size_t elemsize)
   {
-  size_t fullsize=prod(shape);
+  size_t fullsize=util::prod(shape);
   size_t tmpsize=0;
   for (size_t i=0; i<axes.size(); ++i)
     {
@@ -2123,7 +2126,7 @@ template<typename T> arr<char> alloc_tmp(const shape_t &shape,
   return arr<char>(tmpsize*elemsize);
   }
 
-template<typename T> NOINLINE void pocketfft_general_c(
+template<typename T> NOINLINE void general_c(
   const ndarr<cmplx<T>> &in, ndarr<cmplx<T>> &out,
   const shape_t &axes, bool forward, T fct)
   {
@@ -2185,7 +2188,7 @@ template<typename T> NOINLINE void pocketfft_general_c(
     }
   }
 
-template<typename T> NOINLINE void pocketfft_general_hartley(
+template<typename T> NOINLINE void general_hartley(
   const ndarr<T> &in, ndarr<T> &out, const shape_t &axes, T fct)
   {
   auto storage = alloc_tmp<T>(in.shape(), axes, sizeof(T));
@@ -2245,7 +2248,7 @@ template<typename T> NOINLINE void pocketfft_general_hartley(
     }
   }
 
-template<typename T> NOINLINE void pocketfft_general_r2c(
+template<typename T> NOINLINE void general_r2c(
   const ndarr<T> &in, ndarr<cmplx<T>> &out, size_t axis, T fct)
   {
   auto storage = alloc_tmp<T>(in.shape(), in.shape(axis), sizeof(T));
@@ -2291,7 +2294,7 @@ template<typename T> NOINLINE void pocketfft_general_r2c(
       it.out(ii).Set(tdata[i]);
     }
   }
-template<typename T> NOINLINE void pocketfft_general_c2r(
+template<typename T> NOINLINE void general_c2r(
   const ndarr<cmplx<T>> &in, ndarr<T> &out, size_t axis, T fct)
   {
   auto storage = alloc_tmp<T>(out.shape(), out.shape(axis), sizeof(T));
@@ -2344,7 +2347,7 @@ template<typename T> NOINLINE void pocketfft_general_c2r(
     }
   }
 
-template<typename T> NOINLINE void pocketfft_general_r(
+template<typename T> NOINLINE void general_r(
   const ndarr<T> &in, ndarr<T> &out, size_t axis, bool forward, T fct)
   {
   auto storage = alloc_tmp<T>(in.shape(), in.shape(axis), sizeof(T));
@@ -2407,7 +2410,7 @@ template<typename T> void c2c(const shape_t &shape,
   using namespace detail;
   ndarr<cmplx<T>> ain(data_in, shape, stride_in);
   ndarr<cmplx<T>> aout(data_out, shape, stride_out);
-  pocketfft_general_c(ain, aout, axes, forward, fct);
+  general_c(ain, aout, axes, forward, fct);
   }
 
 template<typename T> void r2c(const shape_t &shape,
@@ -2417,7 +2420,7 @@ template<typename T> void r2c(const shape_t &shape,
   using namespace detail;
   ndarr<T> ain(data_in, shape, stride_in);
   ndarr<cmplx<T>> aout(data_out, shape, stride_out);
-  pocketfft_general_r2c(ain, aout, axis, fct);
+  general_r2c(ain, aout, axis, fct);
   }
 
 template<typename T> void c2r(const shape_t &shape, size_t new_size,
@@ -2429,7 +2432,7 @@ template<typename T> void c2r(const shape_t &shape, size_t new_size,
   shape_out[axis] = new_size;
   ndarr<cmplx<T>> ain(data_in, shape, stride_in);
   ndarr<T> aout(data_out, shape_out, stride_out);
-  pocketfft_general_c2r(ain, aout, axis, fct);
+  general_c2r(ain, aout, axis, fct);
   }
 
 template<typename T> void r2r_fftpack(const shape_t &shape,
@@ -2439,7 +2442,7 @@ template<typename T> void r2r_fftpack(const shape_t &shape,
   using namespace detail;
   ndarr<T> ain(data_in, shape, stride_in);
   ndarr<T> aout(data_out, shape, stride_out);
-  pocketfft_general_r(ain, aout, axis, forward, fct);
+  general_r(ain, aout, axis, forward, fct);
   }
 
 template<typename T> void r2r_hartley(const shape_t &shape,
@@ -2449,7 +2452,7 @@ template<typename T> void r2r_hartley(const shape_t &shape,
   using namespace detail;
   ndarr<T> ain(data_in, shape, stride_in);
   ndarr<T> aout(data_out, shape, stride_out);
-  pocketfft_general_hartley(ain, aout, axes, fct);
+  general_hartley(ain, aout, axes, fct);
   }
 
 } // namespace pocketfft
