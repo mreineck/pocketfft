@@ -10,6 +10,9 @@
  *  \author Martin Reinecke
  */
 
+#ifndef POCKETFFT_HDRONLY_H
+#define POCKETFFT_HDRONLY_H
+
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
@@ -2448,3 +2451,5 @@ template<typename T> void pocketfft_r2r_hartley(const shape_t &shape,
   ndarr<T> aout(data_out, shape, stride_out);
   pocketfft_general_hartley(ain, aout, axes, fct);
   }
+
+#endif // POCKETFFT_HDRONLY_H
