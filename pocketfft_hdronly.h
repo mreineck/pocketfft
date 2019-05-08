@@ -193,7 +193,7 @@ template<typename T> class sincos_2pibyn
       if (n==0) return;
       res[0]=1.; res[1]=0.;
       if (n==1) return;
-      size_t l1=(size_t)sqrt(n);
+      size_t l1 = size_t(sqrt(n));
       arr<double> tmp(2*l1);
       for (size_t i=1; i<l1; ++i)
         {
@@ -429,12 +429,12 @@ template<typename T0> class cfftp
 
     size_t length, nfct;
     arr<cmplx<T0>> mem;
-    fctdata fct[NFCT];
+    fctdata fact[NFCT];
 
     void add_factor(size_t factor)
       {
       if (nfct>=NFCT) throw runtime_error("too many prime factors");
-      fct[nfct++].fct = factor;
+      fact[nfct++].fct = factor;
       }
 
 template<bool bwd, typename T> void pass2 (size_t ido, size_t l1,
@@ -876,33 +876,33 @@ template<bool bwd, typename T> void passg (size_t ido, size_t ip,
 #undef CX2
 #undef CX
 
-template<bool bwd, typename T> void pass_all(T c[], T0 fact)
+template<bool bwd, typename T> void pass_all(T c[], T0 fct)
   {
-  if (length==1) { c[0]*=fact; return; }
+  if (length==1) { c[0]*=fct; return; }
   size_t l1=1;
   arr<T> ch(length);
   T *p1=c, *p2=ch.data();
 
   for(size_t k1=0; k1<nfct; k1++)
     {
-    size_t ip=fct[k1].fct;
+    size_t ip=fact[k1].fct;
     size_t l2=ip*l1;
     size_t ido = length/l2;
     if     (ip==4)
-      pass4<bwd> (ido, l1, p1, p2, fct[k1].tw);
+      pass4<bwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==2)
-      pass2<bwd>(ido, l1, p1, p2, fct[k1].tw);
+      pass2<bwd>(ido, l1, p1, p2, fact[k1].tw);
     else if(ip==3)
-      pass3<bwd> (ido, l1, p1, p2, fct[k1].tw);
+      pass3<bwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==5)
-      pass5<bwd> (ido, l1, p1, p2, fct[k1].tw);
+      pass5<bwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==7)
-      pass7<bwd> (ido, l1, p1, p2, fct[k1].tw);
+      pass7<bwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==11)
-      pass11<bwd> (ido, l1, p1, p2, fct[k1].tw);
+      pass11<bwd> (ido, l1, p1, p2, fact[k1].tw);
     else
       {
-      passg<bwd>(ido, ip, l1, p1, p2, fct[k1].tw, fct[k1].tws);
+      passg<bwd>(ido, ip, l1, p1, p2, fact[k1].tw, fact[k1].tws);
       swap(p1,p2);
       }
     swap(p1,p2);
@@ -910,16 +910,16 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fact)
     }
   if (p1!=c)
     {
-    if (fact!=1.)
+    if (fct!=1.)
       for (size_t i=0; i<length; ++i)
-        c[i] = ch[i]*fact;
+        c[i] = ch[i]*fct;
     else
       memcpy (c,p1,length*sizeof(T));
     }
   else
-    if (fact!=1.)
+    if (fct!=1.)
       for (size_t i=0; i<length; ++i)
-        c[i] *= fact;
+        c[i] *= fct;
   }
 
 #undef WA
@@ -945,9 +945,9 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fact)
         len>>=1;
         // factor 2 should be at the front of the factor list
         add_factor(2);
-        swap(fct[0].fct, fct[nfct-1].fct);
+        swap(fact[0].fct, fact[nfct-1].fct);
         }
-      size_t maxl=(size_t)(sqrt((double)len))+1;
+      size_t maxl = size_t(sqrt(double(len)))+1;
       for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
         if ((len%divisor)==0)
           {
@@ -956,7 +956,7 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fact)
             add_factor(divisor);
             len/=divisor;
             }
-          maxl=size_t(sqrt((double)len))+1;
+          maxl=size_t(sqrt(double(len)))+1;
           }
       if (len>1) add_factor(len);
       }
@@ -966,7 +966,7 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fact)
       size_t twsize=0, l1=1;
       for (size_t k=0; k<nfct; ++k)
         {
-        size_t ip=fct[k].fct, ido= length/(l1*ip);
+        size_t ip=fact[k].fct, ido= length/(l1*ip);
         twsize+=(ip-1)*(ido-1);
         if (ip>11)
           twsize+=ip;
@@ -983,18 +983,18 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fact)
       size_t memofs=0;
       for (size_t k=0; k<nfct; ++k)
         {
-        size_t ip=fct[k].fct, ido=length/(l1*ip);
-        fct[k].tw=mem.data()+memofs;
+        size_t ip=fact[k].fct, ido=length/(l1*ip);
+        fact[k].tw=mem.data()+memofs;
         memofs+=(ip-1)*(ido-1);
         for (size_t j=1; j<ip; ++j)
           for (size_t i=1; i<ido; ++i)
-            fct[k].tw[(j-1)*(ido-1)+i-1] = twiddle[j*l1*i];
+            fact[k].tw[(j-1)*(ido-1)+i-1] = twiddle[j*l1*i];
         if (ip>11)
           {
-          fct[k].tws=mem.data()+memofs;
+          fact[k].tws=mem.data()+memofs;
           memofs+=ip;
           for (size_t j=0; j<ip; ++j)
-            fct[k].tws[j] = twiddle[j*l1*ido];
+            fact[k].tws[j] = twiddle[j*l1*ido];
           }
         l1*=ip;
         }
@@ -1027,12 +1027,12 @@ template<typename T0> class rfftp
 
     size_t length, nfct;
     arr<T0> mem;
-    fctdata fct[NFCT];
+    fctdata fact[NFCT];
 
     void add_factor(size_t factor)
       {
       if (nfct>=NFCT) throw runtime_error("too many prime factors");
-      fct[nfct++].fct = factor;
+      fact[nfct++].fct = factor;
       }
 
 #define WA(x,i) wa[(i)+(x)*(ido-1)]
@@ -1664,9 +1664,9 @@ template<typename T> void copy_and_norm(T *c, T *p1, size_t n, T0 fct)
 
   public:
 
-template<typename T> void forward(T c[], T0 fact)
+template<typename T> void forward(T c[], T0 fct)
   {
-  if (length==1) { c[0]*=fact; return; }
+  if (length==1) { c[0]*=fct; return; }
   size_t n=length;
   size_t l1=n, nf=nfct;
   arr<T> ch(n);
@@ -1675,30 +1675,30 @@ template<typename T> void forward(T c[], T0 fact)
   for(size_t k1=0; k1<nf;++k1)
     {
     size_t k=nf-k1-1;
-    size_t ip=fct[k].fct;
+    size_t ip=fact[k].fct;
     size_t ido=n / l1;
     l1 /= ip;
     if(ip==4)
-      radf4(ido, l1, p1, p2, fct[k].tw);
+      radf4(ido, l1, p1, p2, fact[k].tw);
     else if(ip==2)
-      radf2(ido, l1, p1, p2, fct[k].tw);
+      radf2(ido, l1, p1, p2, fact[k].tw);
     else if(ip==3)
-      radf3(ido, l1, p1, p2, fct[k].tw);
+      radf3(ido, l1, p1, p2, fact[k].tw);
     else if(ip==5)
-      radf5(ido, l1, p1, p2, fct[k].tw);
+      radf5(ido, l1, p1, p2, fact[k].tw);
     else
       {
-      radfg(ido, ip, l1, p1, p2, fct[k].tw, fct[k].tws);
+      radfg(ido, ip, l1, p1, p2, fact[k].tw, fact[k].tws);
       swap (p1,p2);
       }
     swap (p1,p2);
     }
-  copy_and_norm(c,p1,n,fact);
+  copy_and_norm(c,p1,n,fct);
   }
 
-template<typename T> void backward(T c[], T0 fact)
+template<typename T> void backward(T c[], T0 fct)
   {
-  if (length==1) { c[0]*=fact; return; }
+  if (length==1) { c[0]*=fct; return; }
   size_t n=length;
   size_t l1=1, nf=nfct;
   arr<T> ch(n);
@@ -1706,22 +1706,22 @@ template<typename T> void backward(T c[], T0 fact)
 
   for(size_t k=0; k<nf; k++)
     {
-    size_t ip = fct[k].fct,
+    size_t ip = fact[k].fct,
            ido= n/(ip*l1);
     if(ip==4)
-      radb4(ido, l1, p1, p2, fct[k].tw);
+      radb4(ido, l1, p1, p2, fact[k].tw);
     else if(ip==2)
-      radb2(ido, l1, p1, p2, fct[k].tw);
+      radb2(ido, l1, p1, p2, fact[k].tw);
     else if(ip==3)
-      radb3(ido, l1, p1, p2, fct[k].tw);
+      radb3(ido, l1, p1, p2, fact[k].tw);
     else if(ip==5)
-      radb5(ido, l1, p1, p2, fct[k].tw);
+      radb5(ido, l1, p1, p2, fact[k].tw);
     else
-      radbg(ido, ip, l1, p1, p2, fct[k].tw, fct[k].tws);
+      radbg(ido, ip, l1, p1, p2, fact[k].tw, fact[k].tws);
     swap (p1,p2);
     l1*=ip;
     }
-  copy_and_norm(c,p1,n,fact);
+  copy_and_norm(c,p1,n,fct);
   }
 
   private:
@@ -1737,9 +1737,9 @@ void factorize()
     len>>=1;
     // factor 2 should be at the front of the factor list
     add_factor(2);
-    swap(fct[0].fct, fct[nfct-1].fct);
+    swap(fact[0].fct, fact[nfct-1].fct);
     }
-  size_t maxl=(size_t)(sqrt((double)len))+1;
+  size_t maxl = size_t(sqrt(double(len)))+1;
   for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
     if ((len%divisor)==0)
       {
@@ -1748,7 +1748,7 @@ void factorize()
         add_factor(divisor);
         len/=divisor;
         }
-      maxl=(size_t)(sqrt((double)len))+1;
+      maxl=size_t(sqrt(double(len)))+1;
       }
   if (len>1) add_factor(len);
   }
@@ -1758,7 +1758,7 @@ size_t twsize() const
   size_t twsz=0, l1=1;
   for (size_t k=0; k<nfct; ++k)
     {
-    size_t ip=fct[k].fct, ido=length/(l1*ip);
+    size_t ip=fact[k].fct, ido=length/(l1*ip);
     twsz+=(ip-1)*(ido-1);
     if (ip>5) twsz+=2*ip;
     l1*=ip;
@@ -1773,28 +1773,28 @@ void comp_twiddle()
   T0 *ptr=mem.data();
   for (size_t k=0; k<nfct; ++k)
     {
-    size_t ip=fct[k].fct, ido=length/(l1*ip);
+    size_t ip=fact[k].fct, ido=length/(l1*ip);
     if (k<nfct-1) // last factor doesn't need twiddles
       {
-      fct[k].tw=ptr; ptr+=(ip-1)*(ido-1);
+      fact[k].tw=ptr; ptr+=(ip-1)*(ido-1);
       for (size_t j=1; j<ip; ++j)
         for (size_t i=1; i<=(ido-1)/2; ++i)
           {
-          fct[k].tw[(j-1)*(ido-1)+2*i-2] = twid[2*j*l1*i];
-          fct[k].tw[(j-1)*(ido-1)+2*i-1] = twid[2*j*l1*i+1];
+          fact[k].tw[(j-1)*(ido-1)+2*i-2] = twid[2*j*l1*i];
+          fact[k].tw[(j-1)*(ido-1)+2*i-1] = twid[2*j*l1*i+1];
           }
       }
     if (ip>5) // special factors required by *g functions
       {
-      fct[k].tws=ptr; ptr+=2*ip;
-      fct[k].tws[0] = 1.;
-      fct[k].tws[1] = 0.;
+      fact[k].tws=ptr; ptr+=2*ip;
+      fact[k].tws[0] = 1.;
+      fact[k].tws[1] = 0.;
       for (size_t i=1; i<=(ip>>1); ++i)
         {
-        fct[k].tws[2*i  ] = twid[2*i*(length/ip)];
-        fct[k].tws[2*i+1] = twid[2*i*(length/ip)+1];
-        fct[k].tws[2*(ip-i)  ] = twid[2*i*(length/ip)];
-        fct[k].tws[2*(ip-i)+1] = -twid[2*i*(length/ip)+1];
+        fact[k].tws[2*i  ] = twid[2*i*(length/ip)];
+        fact[k].tws[2*i+1] = twid[2*i*(length/ip)+1];
+        fact[k].tws[2*(ip-i)  ] = twid[2*i*(length/ip)];
+        fact[k].tws[2*(ip-i)+1] = -twid[2*i*(length/ip)+1];
         }
       }
     l1*=ip;
@@ -1890,7 +1890,8 @@ template<typename T0> class fftblue
       {
       arr<cmplx<T>> tmp(n);
       tmp[0].Set(c[0],c[0]*0);
-      memcpy ((void *)(tmp.data()+1),(void *)(c+1), (n-1)*sizeof(T));
+      memcpy (reinterpret_cast<void *>(tmp.data()+1),
+              reinterpret_cast<void *>(c+1), (n-1)*sizeof(T));
       if ((n&1)==0) tmp[n/2].i=c[0]*0.;
       for (size_t m=1; 2*m<n; ++m)
         tmp[n-m].Set(tmp[m].r, -tmp[m].i);
@@ -1940,16 +1941,16 @@ template<typename T0> class pocketfft_c
         packplan=unique_ptr<cfftp<T0>>(new cfftp<T0>(length));
       }
 
-    template<typename T> NOINLINE void backward(T c[], T0 fct)
+    template<typename T> NOINLINE void backward(cmplx<T> c[], T0 fct)
       {
-      packplan ? packplan->backward((cmplx<T> *)c,fct)
-               : blueplan->backward((cmplx<T> *)c,fct);
+      packplan ? packplan->backward(c,fct)
+               : blueplan->backward(c,fct);
       }
 
-    template<typename T> NOINLINE void forward(T c[], T0 fct)
+    template<typename T> NOINLINE void forward(cmplx<T> c[], T0 fct)
       {
-      packplan ? packplan->forward((cmplx<T> *)c,fct)
-               : blueplan->forward((cmplx<T> *)c,fct);
+      packplan ? packplan->forward(c,fct)
+               : blueplan->forward(c,fct);
       }
 
     size_t length() const { return len; }
@@ -2153,15 +2154,15 @@ template<typename T> NOINLINE void general_c(
         {
         using vtype = typename VTYPE<T>::type;
         it.advance(vlen);
-        auto tdatav = (cmplx<vtype> *)storage.data();
+        auto tdatav = reinterpret_cast<cmplx<vtype> *>(storage.data());
         for (size_t i=0; i<len; ++i)
           for (size_t j=0; j<vlen; ++j)
             {
             tdatav[i].r[j] = it.in(j,i).r;
             tdatav[i].i[j] = it.in(j,i).i;
             }
-        forward ? plan->forward ((vtype *)tdatav, fct)
-                : plan->backward((vtype *)tdatav, fct);
+        forward ? plan->forward (tdatav, fct)
+                : plan->backward(tdatav, fct);
         for (size_t i=0; i<len; ++i)
           for (size_t j=0; j<vlen; ++j)
             it.out(j,i).Set(tdatav[i].r[j],tdatav[i].i[j]);
@@ -2170,23 +2171,23 @@ template<typename T> NOINLINE void general_c(
     while (it.remaining()>0)
       {
       it.advance(1);
-      auto tdata = (cmplx<T> *)storage.data();
+      auto tdata = reinterpret_cast<cmplx<T> *>(storage.data());
       if (it.inplace() && it.contiguous_out()) // fully in-place
-        forward ? plan->forward ((T *)(&it.out(0)), fct)
-                : plan->backward((T *)(&it.out(0)), fct);
+        forward ? plan->forward ((&it.out(0)), fct)
+                : plan->backward((&it.out(0)), fct);
       else if (it.contiguous_out()) // compute FFT in output location
         {
         for (size_t i=0; i<len; ++i)
           it.out(i) = it.in(i);
-        forward ? plan->forward ((T *)(&it.out(0)), fct)
-                : plan->backward((T *)(&it.out(0)), fct);
+        forward ? plan->forward ((&it.out(0)), fct)
+                : plan->backward((&it.out(0)), fct);
         }
       else
         {
         for (size_t i=0; i<len; ++i)
           tdata[i] = it.in(i);
-        forward ? plan->forward ((T *)tdata, fct)
-                : plan->backward((T *)tdata, fct);
+        forward ? plan->forward (tdata, fct)
+                : plan->backward(tdata, fct);
         for (size_t i=0; i<len; ++i)
           it.out(i) = tdata[i];
         }
@@ -2214,11 +2215,11 @@ template<typename T> NOINLINE void general_hartley(
         {
         using vtype = typename VTYPE<T>::type;
         it.advance(vlen);
-        auto tdatav = (vtype *)storage.data();
+        auto tdatav = reinterpret_cast<vtype *>(storage.data());
         for (size_t i=0; i<len; ++i)
           for (size_t j=0; j<vlen; ++j)
             tdatav[i][j] = it.in(j,i);
-        plan->forward((vtype *)tdatav, fct);
+        plan->forward(tdatav, fct);
         for (size_t j=0; j<vlen; ++j)
           it.out(j,0) = tdatav[0][j];
         size_t i=1, i1=1, i2=len-1;
@@ -2236,10 +2237,10 @@ template<typename T> NOINLINE void general_hartley(
     while (it.remaining()>0)
       {
       it.advance(1);
-      auto tdata = (T *)storage.data();
+      auto tdata = reinterpret_cast<T *>(storage.data());
       for (size_t i=0; i<len; ++i)
         tdata[i] = it.in(i);
-      plan->forward((T *)tdata, fct);
+      plan->forward(tdata, fct);
       // Hartley order
       it.out(0) = tdata[0];
       size_t i=1, i1=1, i2=len-1;
@@ -2270,11 +2271,11 @@ template<typename T> NOINLINE void general_r2c(
       {
       using vtype = typename VTYPE<T>::type;
       it.advance(vlen);
-      auto tdatav = (vtype *)storage.data();
+      auto tdatav = reinterpret_cast<vtype *>(storage.data());
       for (size_t i=0; i<len; ++i)
         for (size_t j=0; j<vlen; ++j)
           tdatav[i][j] = it.in(j,i);
-      plan.forward((vtype *)tdatav, fct);
+      plan.forward(tdatav, fct);
       for (size_t j=0; j<vlen; ++j)
         it.out(j,0).Set(tdatav[0][j]);
       size_t i=1, ii=1;
@@ -2289,7 +2290,7 @@ template<typename T> NOINLINE void general_r2c(
   while (it.remaining()>0)
     {
     it.advance(1);
-    auto tdata = (T *)storage.data();
+    auto tdata = reinterpret_cast<T *>(storage.data());
     for (size_t i=0; i<len; ++i)
       tdata[i] = it.in(i);
     plan.forward(tdata, fct);
@@ -2316,9 +2317,10 @@ template<typename T> NOINLINE void general_c2r(
       {
       using vtype = typename VTYPE<T>::type;
       it.advance(vlen);
-      auto tdatav = (vtype *)storage.data();
+      auto tdatav = reinterpret_cast<vtype *>(storage.data());
       for (size_t j=0; j<vlen; ++j)
         tdatav[0][j]=it.in(j,0).r;
+      {
       size_t i=1, ii=1;
       for (; i<len-1; i+=2, ++ii)
         for (size_t j=0; j<vlen; ++j)
@@ -2329,6 +2331,7 @@ template<typename T> NOINLINE void general_c2r(
       if (i<len)
         for (size_t j=0; j<vlen; ++j)
           tdatav[i][j] = it.in(j,ii).r;
+      }
       plan.backward(tdatav, fct);
       for (size_t i=0; i<len; ++i)
         for (size_t j=0; j<vlen; ++j)
@@ -2338,8 +2341,9 @@ template<typename T> NOINLINE void general_c2r(
   while (it.remaining()>0)
     {
     it.advance(1);
-    auto tdata = (T *)storage.data();
+    auto tdata = reinterpret_cast<T *>(storage.data());
     tdata[0]=it.in(0).r;
+    {
     size_t i=1, ii=1;
     for (; i<len-1; i+=2, ++ii)
       {
@@ -2348,6 +2352,7 @@ template<typename T> NOINLINE void general_c2r(
       }
     if (i<len)
       tdata[i] = it.in(ii).r;
+    }
     plan.backward(tdata, fct);
     for (size_t i=0; i<len; ++i)
       it.out(i) = tdata[i];
@@ -2369,7 +2374,7 @@ template<typename T> NOINLINE void general_r(
       {
       using vtype = typename VTYPE<T>::type;
       it.advance(vlen);
-      auto tdatav = (vtype *)storage.data();
+      auto tdatav = reinterpret_cast<vtype *>(storage.data());
       for (size_t i=0; i<len; ++i)
         for (size_t j=0; j<vlen; ++j)
           tdatav[i][j] = it.in(j,i);
@@ -2383,7 +2388,7 @@ template<typename T> NOINLINE void general_r(
   while (it.remaining()>0)
     {
     it.advance(1);
-    auto tdata = (T *)storage.data();
+    auto tdata = reinterpret_cast<T *>(storage.data());
     if (it.inplace() && it.contiguous_out()) // fully in-place
       forward ? plan.forward (&it.out(0), fct)
               : plan.backward(&it.out(0), fct);
