@@ -20,6 +20,9 @@
 #include <stdexcept>
 #include <memory>
 #include <vector>
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
 
 #ifdef __GNUC__
 #define NOINLINE __attribute__((noinline))
@@ -38,6 +41,21 @@ using stride_t = vector<ptrdiff_t>;
 
 namespace detail {
 
+#ifndef POCKETFFT_NO_VECTORS
+#if (defined(__AVX512F__))
+#define HAVE_VECSUPPORT
+constexpr int VBYTELEN=64;
+#elif (defined(__AVX__))
+#define HAVE_VECSUPPORT
+constexpr int VBYTELEN=32;
+#elif (defined(__SSE2__))
+#define HAVE_VECSUPPORT
+constexpr int VBYTELEN=16;
+#else
+#define POCKETFFT_NO_VECTORS
+#endif
+#endif
+
 template<typename T> struct arr
   {
   private:
@@ -51,8 +69,11 @@ template<typename T> struct arr
       void *res = malloc(num*sizeof(T));
       if (!res) throw bad_alloc();
 #else
-#if 0
+#if __cplusplus >= 201703L
       void *res = aligned_alloc(64,num*sizeof(T));
+      if (!res) throw bad_alloc();
+#elif defined(_WIN32)
+      void *res = _aligned_malloc(num*sizeof(T), 64);
       if (!res) throw bad_alloc();
 #else
       void *res(nullptr);
@@ -2069,20 +2090,6 @@ template<size_t N, typename Ti, typename To> class multi_iter
     bool contiguous_in() const { return str_i==sizeof(Ti); }
     bool contiguous_out() const { return str_o==sizeof(To); }
   };
-
-
-#ifndef POCKETFFT_NO_VECTORS
-#if (defined(__AVX512F__))
-#define HAVE_VECSUPPORT
-constexpr int VBYTELEN=64;
-#elif (defined(__AVX__))
-#define HAVE_VECSUPPORT
-constexpr int VBYTELEN=32;
-#elif (defined(__SSE2__))
-#define HAVE_VECSUPPORT
-constexpr int VBYTELEN=16;
-#endif
-#endif
 
 #if defined(HAVE_VECSUPPORT)
 template<typename T> struct VTYPE{};
