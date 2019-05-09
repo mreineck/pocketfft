@@ -1,5 +1,69 @@
-PocketFFT interface
-===================
+PocketFFT for C++
+=================
+
+This is a heavily modified implementation of FFTPack [1,2], with the following
+advantages:
+
+- Strictly C++11 compliant
+- More accurate twiddle factor computation
+- Worst case complexity for transform sizes with large prime factors is
+  `N*log(N)`, because Bluestein's algorithm [3] is used for these cases.
+- Supports multidimensional arrays and selection of the axes to be transformed.
+- Supports single and double precision.
+- Supports fully complex and half-complex (i.e. complex-to-real and
+  real-to-complex) FFTs. For half-complex transforms, several conventions for
+  representing the complex-valued side are supported (reduced-size complex
+  array, FFTPACK-style half-complex format and Hartley transform).
+- Makes use of CPU vector instructions when performing 2D and higher-dimensional
+  transforms.
+- Does not have persistent transform plans, which makes the interface simpler.
+  Plans are generated on the fly; plan generation is very quick.
+
+
+License
+-------
+
+3-clause BSD (see LICENSE.md)
+
+
+Some code details
+-----------------
+
+Twiddle factor computation:
+
+- making use of symmetries to reduce number of sin/cos evaluations
+- all angles are reduced to the range `[0; pi/4]` for higher accuracy
+- an adapted implementation of `sincospi()` [4] is used, which actually computes
+  `sin(x)` and `(cos(x)-1)`.
+- if `n` sin/cos pairs are required, the adjusted `sincospi()` is only called
+  `2*sqrt(n)` times; the remaining values are obtained by evaluating the
+  angle addition theorems in a numerically accurate way.
+
+Efficient codelets are available for the factors:
+
+- 2, 3, 4, 5, 7, 11 for complex-valued FFTs
+- 2, 3, 4, 5 for real-valued FFTs
+
+Larger prime factors are handled by somewhat less efficient, generic routines.
+
+For lengths with very large prime factors, Bluestein's algorithm is used, and
+instead of an FFT of length `n`, a convolution of length `n2 >= 2*n-1`
+is performed, where `n2` is chosen to be highly composite.
+
+
+[1] Swarztrauber, P. 1982, Vectorizing the Fast Fourier Transforms
+    (New York: Academic Press), 51
+
+[2] https://www.netlib.org/fftpack/
+
+[3] https://en.wikipedia.org/wiki/Chirp_Z-transform
+
+[4] https://stackoverflow.com/questions/42792939/
+
+
+
+Programming interface
+=====================
 
 Arguments
 ---------
@@ -37,6 +101,7 @@ General constraints on arguments
  - For `c2r` transforms: the equality `new_size/2 == shape[axis]-1` must be
    fulfilled, i.e. new_size must be either `2*shape[axis]-2` or
    `2*shape[axis]-1`.
+
 ```
 using shape_t = std::vector<std::size_t>;
 using stride_t = std::vector<std::ptrdiff_t>;
