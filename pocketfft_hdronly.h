@@ -377,6 +377,42 @@ struct util // hack to avoid duplicate symbols
       res*=sz;
     return res;
     }
+
+  static NOINLINE void sanity_check(const shape_t &shape,
+    const stride_t &stride_in, const stride_t &stride_out, bool inplace)
+    {
+    auto ndim = shape.size();
+    if (ndim<1) throw runtime_error("ndim must be >= 1");
+    if ((stride_in.size()!=ndim) || (stride_out.size()!=ndim))
+      throw runtime_error("stride dimension mismatch");
+    for (auto shp: shape)
+      if (shp<1) throw runtime_error("zero extent detected");
+    if (inplace)
+      for (size_t i=0; i<ndim; ++i)
+        if (stride_in[i]!=stride_out[i]) throw runtime_error("stride mismatch");
+    }
+
+  static NOINLINE void sanity_check(const shape_t &shape,
+    const stride_t &stride_in, const stride_t &stride_out, bool inplace,
+    const shape_t &axes)
+    {
+    sanity_check(shape, stride_in, stride_out, inplace);
+    auto ndim = shape.size();
+    shape_t tmp(ndim,0);
+    for (auto ax : axes)
+      {
+      if (ax>=ndim) throw runtime_error("bad axis number");
+      if (++tmp[ax]>1) throw runtime_error("axis specified repeatedly");
+      }
+    }
+
+  static NOINLINE void sanity_check(const shape_t &shape,
+    const stride_t &stride_in, const stride_t &stride_out, bool inplace,
+    size_t axis)
+    {
+    sanity_check(shape, stride_in, stride_out, inplace);
+    if (axis>=shape.size()) throw runtime_error("bad axis number");
+    }
   };
 
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
@@ -2350,6 +2386,7 @@ template<typename T> void c2c(const shape_t &shape,
   bool forward, const void *data_in, void *data_out, T fct)
   {
   using namespace detail;
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<cmplx<T>> ain(data_in, shape, stride_in),
                   aout(data_out, shape, stride_out);
   general_c(ain, aout, axes, forward, fct);
@@ -2360,9 +2397,26 @@ template<typename T> void r2c(const shape_t &shape,
   const void *data_in, void *data_out, T fct)
   {
   using namespace detail;
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axis);
   ndarr<T> ain(data_in, shape, stride_in);
   ndarr<cmplx<T>> aout(data_out, shape, stride_out);
   general_r2c(ain, aout, axis, fct);
+  }
+
+template<typename T> void r2c(const shape_t &shape, const stride_t &stride_in,
+  const stride_t &stride_out, const shape_t &axes, const void *data_in,
+  void *data_out, T fct)
+  {
+  using namespace detail;
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
+  r2c(shape, stride_in, stride_out, axes.back(), data_in, data_out, fct);
+  if (axes.size()==1) return;
+
+  shape_t shape_out(shape);
+  shape_out[axes.back()] = shape[axes.back()]/2 + 1;
+  auto newaxes = shape_t{axes.begin(), --axes.end()};
+  c2c(shape_out, stride_out, stride_out, newaxes, true, data_out, data_out,
+    T(1));
   }
 
 template<typename T> void c2r(const shape_t &shape, size_t new_size,
@@ -2370,6 +2424,7 @@ template<typename T> void c2r(const shape_t &shape, size_t new_size,
   const void *data_in, void *data_out, T fct)
   {
   using namespace detail;
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axis);
   shape_t shape_out(shape);
   shape_out[axis] = new_size;
   ndarr<cmplx<T>> ain(data_in, shape, stride_in);
@@ -2377,11 +2432,36 @@ template<typename T> void c2r(const shape_t &shape, size_t new_size,
   general_c2r(ain, aout, axis, fct);
   }
 
+template<typename T> void c2r(const shape_t &shape, size_t new_size,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const void *data_in, void *data_out, T fct)
+  {
+  using namespace detail;
+  if (axes.size()==1)
+    {
+    c2r(shape, new_size, stride_in, stride_out, axes[0],
+    data_in, data_out, fct);
+    return;
+    }
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
+  auto nval = util::prod(shape);
+  stride_t stride_inter(shape.size());
+  stride_inter.back() = sizeof(cmplx<T>);
+  for (int i=shape.size()-2; i>=0; --i)
+    stride_inter[i] = stride_inter[i+1]*shape[i+1];
+  arr<char> tmp(nval*sizeof(cmplx<T>));
+  auto newaxes = shape_t({axes.begin(), --axes.end()});
+  c2c(shape, stride_in, stride_inter, newaxes, false, data_in, tmp.data(), T(1));
+  c2r(shape, new_size, stride_inter, stride_out, axes.back(),
+    tmp.data(), data_out, fct);
+  }
+
 template<typename T> void r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   bool forward, const void *data_in, void *data_out, T fct)
   {
   using namespace detail;
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axis);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
   general_r(ain, aout, axis, forward, fct);
   }
@@ -2391,6 +2471,7 @@ template<typename T> void r2r_hartley(const shape_t &shape,
   const void *data_in, void *data_out, T fct)
   {
   using namespace detail;
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
   general_hartley(ain, aout, axes, fct);
   }
