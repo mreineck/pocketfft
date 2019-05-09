@@ -16,7 +16,6 @@
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
-#include <algorithm>
 #include <stdexcept>
 #include <memory>
 #include <vector>
@@ -228,16 +227,11 @@ template<typename T> class sincos_2pibyn
       size_t i=0, idx1=0, idx2=2*ndone-2;
       for (; i+1<ndone; i+=2, idx1+=2, idx2-=2)
         {
-        res[idx1]   = p[2*i];
-        res[idx1+1] = p[2*i+1];
-        res[idx2]   = p[2*i+3];
-        res[idx2+1] = p[2*i+2];
+        res[idx1] = p[2*i  ]; res[idx1+1] = p[2*i+1];
+        res[idx2] = p[2*i+3]; res[idx2+1] = p[2*i+2];
         }
       if (i!=ndone)
-        {
-        res[idx1  ] = p[2*i];
-        res[idx1+1] = p[2*i+1];
-        }
+        { res[idx1] = p[2*i]; res[idx1+1] = p[2*i+1]; }
       }
 
     void calc_first_half(size_t n, T * restrict res)
@@ -247,24 +241,13 @@ template<typename T> class sincos_2pibyn
       calc_first_octant(n<<2, p);
       int i4=0, in=n, i=0;
       for (; i4<=in-i4; ++i, i4+=4) // octant 0
-        {
-        res[2*i] = p[2*i4]; res[2*i+1] = p[2*i4+1];
-        }
+        { res[2*i] = p[2*i4]; res[2*i+1] = p[2*i4+1]; }
       for (; i4-in <= 0; ++i, i4+=4) // octant 1
-        {
-        int xm = in-i4;
-        res[2*i] = p[2*xm+1]; res[2*i+1] = p[2*xm];
-        }
+        { int xm = in-i4; res[2*i] = p[2*xm+1]; res[2*i+1] = p[2*xm]; }
       for (; i4<=3*in-i4; ++i, i4+=4) // octant 2
-        {
-        int xm = i4-in;
-        res[2*i] = -p[2*xm+1]; res[2*i+1] = p[2*xm];
-        }
+        { int xm = i4-in; res[2*i] = -p[2*xm+1]; res[2*i+1] = p[2*xm]; }
       for (; i<ndone; ++i, i4+=4) // octant 3
-        {
-        int xm = 2*in-i4;
-        res[2*i] = -p[2*xm]; res[2*i+1] = p[2*xm+1];
-        }
+        { int xm = 2*in-i4; res[2*i] = -p[2*xm]; res[2*i+1] = p[2*xm+1]; }
       }
 
     void fill_first_quadrant(size_t n, T * restrict res)
@@ -274,10 +257,7 @@ template<typename T> class sincos_2pibyn
       if ((n&7)==0)
         res[quart] = res[quart+1] = hsqt2;
       for (size_t i=2, j=2*quart-2; i<quart; i+=2, j-=2)
-        {
-        res[j  ] = res[i+1];
-        res[j+1] = res[i  ];
-        }
+        { res[j] = res[i+1]; res[j+1] = res[i]; }
       }
 
     NOINLINE void fill_first_half(size_t n, T * restrict res)
@@ -285,16 +265,10 @@ template<typename T> class sincos_2pibyn
       size_t half = n>>1;
       if ((n&3)==0)
         for (size_t i=0; i<half; i+=2)
-          {
-          res[i+half]   = -res[i+1];
-          res[i+half+1] =  res[i  ];
-          }
+          { res[i+half] = -res[i+1]; res[i+half+1] = res[i]; }
       else
         for (size_t i=2, j=2*half-2; i<half; i+=2, j-=2)
-          {
-          res[j  ] = -res[i  ];
-          res[j+1] =  res[i+1];
-          }
+          { res[j] = -res[i]; res[j+1] = res[i+1]; }
       }
 
     void fill_second_half(size_t n, T * restrict res)
@@ -304,10 +278,7 @@ template<typename T> class sincos_2pibyn
           res[i+n] = -res[i];
       else
         for (size_t i=2, j=2*n-2; i<n; i+=2, j-=2)
-          {
-          res[j  ] =  res[i  ];
-          res[j+1] = -res[i+1];
-          }
+          { res[j] = res[i]; res[j+1] = -res[i+1]; }
       }
 
     NOINLINE void sincos_2pibyn_half(size_t n, T * restrict res)
@@ -411,8 +382,6 @@ struct util // hack to avoid duplicate symbols
 #define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 #define WA(x,i) wa[(i)-1+(x)*(ido-1)]
 
-constexpr size_t NFCT=25;
-
 //
 // complex FFTPACK transforms
 //
@@ -427,15 +396,12 @@ template<typename T0> class cfftp
       cmplx<T0> *tw, *tws;
       };
 
-    size_t length, nfct;
+    size_t length;
     arr<cmplx<T0>> mem;
-    fctdata fact[NFCT];
+    vector<fctdata> fact;
 
     void add_factor(size_t factor)
-      {
-      if (nfct>=NFCT) throw runtime_error("too many prime factors");
-      fact[nfct++].fct = factor;
-      }
+      { fact.push_back({factor, nullptr, nullptr}); }
 
 template<bool bwd, typename T> void pass2 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
@@ -883,7 +849,7 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
   arr<T> ch(length);
   T *p1=c, *p2=ch.data();
 
-  for(size_t k1=0; k1<nfct; k1++)
+  for(size_t k1=0; k1<fact.size(); k1++)
     {
     size_t ip=fact[k1].fct;
     size_t l2=ip*l1;
@@ -936,7 +902,6 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
   private:
     NOINLINE void factorize()
       {
-      nfct=0;
       size_t len=length;
       while ((len&3)==0)
         { add_factor(4); len>>=2; }
@@ -945,7 +910,7 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
         len>>=1;
         // factor 2 should be at the front of the factor list
         add_factor(2);
-        swap(fact[0].fct, fact[nfct-1].fct);
+        swap(fact[0].fct, fact.back().fct);
         }
       size_t maxl = size_t(sqrt(double(len)))+1;
       for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
@@ -964,7 +929,7 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
     size_t twsize() const
       {
       size_t twsize=0, l1=1;
-      for (size_t k=0; k<nfct; ++k)
+      for (size_t k=0; k<fact.size(); ++k)
         {
         size_t ip=fact[k].fct, ido= length/(l1*ip);
         twsize+=(ip-1)*(ido-1);
@@ -981,7 +946,7 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
       auto twiddle = twid.cdata();
       size_t l1=1;
       size_t memofs=0;
-      for (size_t k=0; k<nfct; ++k)
+      for (size_t k=0; k<fact.size(); ++k)
         {
         size_t ip=fact[k].fct, ido=length/(l1*ip);
         fact[k].tw=mem.data()+memofs;
@@ -1002,7 +967,7 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
 
   public:
     NOINLINE cfftp(size_t length_)
-      : length(length_), nfct(0)
+      : length(length_)
       {
       if (length==0) throw runtime_error("zero length FFT requested");
       if (length==1) return;
@@ -1025,15 +990,12 @@ template<typename T0> class rfftp
       T0 *tw, *tws;
       };
 
-    size_t length, nfct;
+    size_t length;
     arr<T0> mem;
-    fctdata fact[NFCT];
+    vector<fctdata> fact;
 
     void add_factor(size_t factor)
-      {
-      if (nfct>=NFCT) throw runtime_error("too many prime factors");
-      fact[nfct++].fct = factor;
-      }
+      { fact.push_back({factor, nullptr, nullptr}); }
 
 #define WA(x,i) wa[(i)+(x)*(ido-1)]
 #define PM(a,b,c,d) { a=c+d; b=c-d; }
@@ -1668,7 +1630,7 @@ template<typename T> void forward(T c[], T0 fct)
   {
   if (length==1) { c[0]*=fct; return; }
   size_t n=length;
-  size_t l1=n, nf=nfct;
+  size_t l1=n, nf=fact.size();
   arr<T> ch(n);
   T *p1=c, *p2=ch.data();
 
@@ -1700,7 +1662,7 @@ template<typename T> void backward(T c[], T0 fct)
   {
   if (length==1) { c[0]*=fct; return; }
   size_t n=length;
-  size_t l1=1, nf=nfct;
+  size_t l1=1, nf=fact.size();
   arr<T> ch(n);
   T *p1=c, *p2=ch.data();
 
@@ -1729,7 +1691,6 @@ template<typename T> void backward(T c[], T0 fct)
 void factorize()
   {
   size_t len=length;
-  nfct=0;
   while ((len%4)==0)
     { add_factor(4); len>>=2; }
   if ((len%2)==0)
@@ -1737,7 +1698,7 @@ void factorize()
     len>>=1;
     // factor 2 should be at the front of the factor list
     add_factor(2);
-    swap(fact[0].fct, fact[nfct-1].fct);
+    swap(fact[0].fct, fact.back().fct);
     }
   size_t maxl = size_t(sqrt(double(len)))+1;
   for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
@@ -1756,7 +1717,7 @@ void factorize()
 size_t twsize() const
   {
   size_t twsz=0, l1=1;
-  for (size_t k=0; k<nfct; ++k)
+  for (size_t k=0; k<fact.size(); ++k)
     {
     size_t ip=fact[k].fct, ido=length/(l1*ip);
     twsz+=(ip-1)*(ido-1);
@@ -1771,10 +1732,10 @@ void comp_twiddle()
   sincos_2pibyn<T0> twid(length, true);
   size_t l1=1;
   T0 *ptr=mem.data();
-  for (size_t k=0; k<nfct; ++k)
+  for (size_t k=0; k<fact.size(); ++k)
     {
     size_t ip=fact[k].fct, ido=length/(l1*ip);
-    if (k<nfct-1) // last factor doesn't need twiddles
+    if (k<fact.size()-1) // last factor doesn't need twiddles
       {
       fact[k].tw=ptr; ptr+=(ip-1)*(ido-1);
       for (size_t j=1; j<ip; ++j)
@@ -1807,7 +1768,6 @@ NOINLINE rfftp(size_t length_)
   : length(length_)
   {
   if (length==0) throw runtime_error("zero-sized FFT");
-  nfct=0;
   if (length==1) return;
   factorize();
   mem.resize(twsize());
@@ -1942,16 +1902,10 @@ template<typename T0> class pocketfft_c
       }
 
     template<typename T> NOINLINE void backward(cmplx<T> c[], T0 fct)
-      {
-      packplan ? packplan->backward(c,fct)
-               : blueplan->backward(c,fct);
-      }
+      { packplan ? packplan->backward(c,fct) : blueplan->backward(c,fct); }
 
     template<typename T> NOINLINE void forward(cmplx<T> c[], T0 fct)
-      {
-      packplan ? packplan->forward(c,fct)
-               : blueplan->forward(c,fct);
-      }
+      { packplan ? packplan->forward(c,fct) : blueplan->forward(c,fct); }
 
     size_t length() const { return len; }
   };
@@ -2128,8 +2082,8 @@ template<typename T> arr<char> alloc_tmp(const shape_t &shape,
     {
     auto axsize = shape[axes[i]];
     auto othersize = fullsize/axsize;
-    tmpsize = max(tmpsize,
-                  axsize*((othersize>=VTYPE<T>::vlen) ? VTYPE<T>::vlen : 1));
+    auto sz = axsize*((othersize>=VTYPE<T>::vlen) ? VTYPE<T>::vlen : 1);
+    if (sz>tmpsize) tmpsize=sz;
     }
   return arr<char>(tmpsize*elemsize);
   }
