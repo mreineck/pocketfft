@@ -30,9 +30,9 @@ int main()
     c2c<double>(shape, stride, stride, axes, true,
       data.data(), data.data(), 1.);
   for (size_t rep=0; rep<10; ++rep)
-    r2r_fftpack<double>(shape, stride, stride, 0, true,
-      data.data(), data.data(), 1.);
+    r2r_fftpack<double>(shape, rstride, rstride, 0, true,
+      rdata.data(), rdata.data(), 1.);
   for (size_t rep=0; rep<10; ++rep)
-    r2r_hartley<double>(shape, stride, stride, axes,
-      data.data(), data.data(), 1.);
+    r2r_hartley<double>(shape, rstride, rstride, axes,
+      rdata.data(), rdata.data(), 1.);
   }

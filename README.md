@@ -17,7 +17,6 @@ advantages:
 - Makes use of CPU vector instructions when performing 2D and higher-dimensional
   transforms.
 - Does not have persistent transform plans, which makes the interface simpler.
-  Plans are generated on the fly; plan generation is very quick.
 
 
 License
