@@ -37,8 +37,8 @@ namespace pocketfft {
 using shape_t = std::vector<size_t>;
 using stride_t = std::vector<ptrdiff_t>;
 
-constexpr bool POCKETFFT_FORWARD  = true,
-               POCKETFFT_BACKWARD = false;
+constexpr bool FORWARD  = true,
+               BACKWARD = false;
 
 namespace detail {
 

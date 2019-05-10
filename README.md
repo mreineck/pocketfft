@@ -9,13 +9,13 @@ advantages:
 - Worst case complexity for transform sizes with large prime factors is
   `N*log(N)`, because Bluestein's algorithm [3] is used for these cases.
 - Supports multidimensional arrays and selection of the axes to be transformed.
-- Supports single and double precision.
+- Supports `float`, `double`, and `long double` types.
 - Supports fully complex and half-complex (i.e. complex-to-real and
   real-to-complex) FFTs. For half-complex transforms, several conventions for
   representing the complex-valued side are supported (reduced-size complex
   array, FFTPACK-style half-complex format and Hartley transform).
 - Makes use of CPU vector instructions when performing 2D and higher-dimensional
-  transforms.
+  transforms, if they are available.
 - Does not have persistent transform plans, which makes the interface simpler.
 
 
@@ -107,8 +107,8 @@ General constraints on arguments
 using shape_t = std::vector<std::size_t>;
 using stride_t = std::vector<std::ptrdiff_t>;
 
-constexpr bool POCKETFFT_FORWARD  = true,
-               POCKETFFT_BACKWARD = false;
+constexpr bool FORWARD  = true,
+               BACKWARD = false;
 
 template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
