@@ -37,6 +37,8 @@ namespace pocketfft {
 using shape_t = std::vector<size_t>;
 using stride_t = std::vector<ptrdiff_t>;
 
+constexpr bool POCKETFFT_FORWARD  = true,
+               POCKETFFT_BACKWARD = false;
 
 namespace detail {
 
@@ -427,7 +429,6 @@ struct util // hack to avoid duplicate symbols
 template<typename T0> class cfftp
   {
   private:
-
     struct fctdata
       {
       size_t fct;
@@ -2033,10 +2034,9 @@ template<size_t N, typename Ti, typename To> class multi_iter
       for (int i=pos.size()-1; i>=0; --i)
         {
         if (i==int(idim)) continue;
-        ++pos[i];
         p_ii += iarr.stride(i);
         p_oi += oarr.stride(i);
-        if (pos[i] < iarr.shape(i))
+        if (++pos[i] < iarr.shape(i))
           return;
         pos[i] = 0;
         p_ii -= iarr.shape(i)*iarr.stride(i);
@@ -2393,68 +2393,70 @@ template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   general_c(ain, aout, axes, forward, fct);
   }
 
-template<typename T> void r2c(const shape_t &shape, const stride_t &stride_in,
-  const stride_t &stride_out, size_t axis, const T *data_in,
-  std::complex<T> *data_out, T fct)
+template<typename T> void r2c(const shape_t &shape_in,
+  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
+  const T *data_in, std::complex<T> *data_out, T fct)
   {
   using namespace detail;
-  util::sanity_check(shape, stride_in, stride_out, false, axis);
-  ndarr<T> ain(data_in, shape, stride_in);
-  ndarr<cmplx<T>> aout(data_out, shape, stride_out);
+  util::sanity_check(shape_in, stride_in, stride_out, false, axis);
+  ndarr<T> ain(data_in, shape_in, stride_in);
+  ndarr<cmplx<T>> aout(data_out, shape_in, stride_out); // FIXME
   general_r2c(ain, aout, axis, fct);
   }
 
-template<typename T> void r2c(const shape_t &shape, const stride_t &stride_in,
-  const stride_t &stride_out, const shape_t &axes, const T *data_in,
-  std::complex<T> *data_out, T fct)
+template<typename T> void r2c(const shape_t &shape_in,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const T *data_in, std::complex<T> *data_out, T fct)
   {
   using namespace detail;
-  util::sanity_check(shape, stride_in, stride_out, false, axes);
-  r2c(shape, stride_in, stride_out, axes.back(), data_in, data_out, fct);
+  util::sanity_check(shape_in, stride_in, stride_out, false, axes);
+  r2c(shape_in, stride_in, stride_out, axes.back(), data_in, data_out, fct);
   if (axes.size()==1) return;
 
-  shape_t shape_out(shape);
-  shape_out[axes.back()] = shape[axes.back()]/2 + 1;
+  shape_t shape_out(shape_in);
+  shape_out[axes.back()] = shape_in[axes.back()]/2 + 1;
   auto newaxes = shape_t{axes.begin(), --axes.end()};
   c2c(shape_out, stride_out, stride_out, newaxes, true, data_out, data_out,
     T(1));
   }
 
-template<typename T> void c2r(const shape_t &shape, size_t new_size,
+template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   const std::complex<T> *data_in, T *data_out, T fct)
   {
   using namespace detail;
-  util::sanity_check(shape, stride_in, stride_out, false, axis);
-  shape_t shape_out(shape);
-  shape_out[axis] = new_size;
-  ndarr<cmplx<T>> ain(data_in, shape, stride_in);
+  util::sanity_check(shape_out, stride_in, stride_out, false, axis);
+  shape_t shape_in(shape_out);
+  shape_in[axis] = shape_out[axis]/2 + 1;
+  ndarr<cmplx<T>> ain(data_in, shape_in, stride_in);
   ndarr<T> aout(data_out, shape_out, stride_out);
   general_c2r(ain, aout, axis, fct);
   }
 
-template<typename T> void c2r(const shape_t &shape, size_t new_size,
+template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const std::complex<T> *data_in, T *data_out, T fct)
   {
   using namespace detail;
   if (axes.size()==1)
     {
-    c2r(shape, new_size, stride_in, stride_out, axes[0],
-    data_in, data_out, fct);
+    c2r(shape_out, stride_in, stride_out, axes[0], data_in, data_out, fct);
     return;
     }
-  util::sanity_check(shape, stride_in, stride_out, false, axes);
-  auto nval = util::prod(shape);
-  stride_t stride_inter(shape.size());
+  util::sanity_check(shape_out, stride_in, stride_out, false, axes);
+  auto shape_in = shape_out;
+  shape_in[axes.back()] = shape_out[axes.back()]/2 + 1;
+  auto nval = util::prod(shape_in);
+  stride_t stride_inter(shape_in.size());
   stride_inter.back() = sizeof(cmplx<T>);
-  for (int i=shape.size()-2; i>=0; --i)
-    stride_inter[i] = stride_inter[i+1]*shape[i+1];
+  for (int i=shape_in.size()-2; i>=0; --i)
+    stride_inter[i] = stride_inter[i+1]*shape_in[i+1];
   arr<complex<T>> tmp(nval);
   auto newaxes = shape_t({axes.begin(), --axes.end()});
-  c2c(shape, stride_in, stride_inter, newaxes, false, data_in, tmp.data(), T(1));
-  c2r(shape, new_size, stride_inter, stride_out, axes.back(),
-    tmp.data(), data_out, fct);
+  c2c(shape_in, stride_in, stride_inter, newaxes, false, data_in, tmp.data(),
+    T(1));
+  c2r(shape_out, stride_inter, stride_out, axes.back(), tmp.data(), data_out,
+    fct);
   }
 
 template<typename T> void r2r_fftpack(const shape_t &shape,

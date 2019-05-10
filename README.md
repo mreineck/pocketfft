@@ -66,7 +66,10 @@ Programming interface
 
 Arguments
 ---------
- - `shape` contains the number of array entries along each axis.
+ - `shape[_*]` contains the number of array entries along each axis.
+   For `c2c` and `r2r` transforms, `shape` is identical for input and output
+   arrays. For `r2c` transforms the shape of the input array must be specified,
+   while for `c2r` transforms the shape of the *output* array must be given.
  - `stride_*` describes array strides, i.e. the memory distance (in bytes)
    between two neighboring array entries along an axis.
  - `axes` is a vector of nonnegative integers, describing the axes along
@@ -75,7 +78,8 @@ Arguments
    `axes` is treated specially.
  - `forward` describes the direction of a transform. Generally a forward
    transform has a minus sign in the complex exponent, while the backward
-   transform has a positive one.
+   transform has a positive one. Instead if `true`/`false`, the symbolic
+   constants `POCKETFFT_FORWARD`/`POCKETFFT_BACKWARD` can be used.
  - `fct` is a floating-point value which is used to scale the result of a
    transform. `pocketfft`'s transforms are not normalized, so if normalization
    is required, an appropriate scaling factor has to be specified.
@@ -84,9 +88,9 @@ Arguments
 
 General constraints on arguments
 --------------------------------
- - `shape`, `stride_in` and `stride_out` must have the same `size()` and must
-   not be empty.
- - Entries in `shape` must be >=1.
+ - `shape[_*]`, `stride_in` and `stride_out` must have the same `size()`
+   and must not be empty.
+ - Entries in `shape[_*]` must be >=1.
  - If `data_in==data_out`, `stride_in` and `stride_out` must have identical
    content. These in-place transforms are fine for `c2c` and `r2r`, but not for
    `r2c/c2r`.
@@ -95,35 +99,42 @@ General constraints on arguments
    are fine. Strides that lead to multiple accesses of the same memory address
    are not allowed.
  - The same axis must not be specified more than once in an `axes` argument.
- - For `r2c` transforms: the length of the output array along `axis` (or the
-   last entry in `axes`) is assumed to be `shape[axis]/2 + 1`.
- - For `c2r` transforms: the equality `new_size/2 == shape[axis]-1` must be
-   fulfilled, i.e. new_size must be either `2*shape[axis]-2` or
-   `2*shape[axis]-1`.
+ - For `r2c` and `c2r` transforms: the length of the complex array along `axis`
+   (or the last entry in `axes`) is assumed to be `s/2 + 1`, where `s` is the
+   length of the corresponding axis of the real array.
 
 ```
 using shape_t = std::vector<std::size_t>;
 using stride_t = std::vector<std::ptrdiff_t>;
 
+constexpr bool POCKETFFT_FORWARD  = true,
+               POCKETFFT_BACKWARD = false;
+
 template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
   const std::complex<T> *data_in, std::complex<T> *data_out, T fct);
 
-template<typename T> void r2c(const shape_t &shape, const stride_t &stride_in,
-  const stride_t &stride_out, size_t axis, const T *data_in,
-  std::complex<T> *data_out, T fct);
-
-template<typename T> void r2c(const shape_t &shape, const stride_t &stride_in,
-  const stride_t &stride_out, const shape_t &axes, const T *data_in,
-  std::complex<T> *data_out, T fct);
-
-template<typename T> void c2r(const shape_t &shape, size_t new_size,
+template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const std::complex<T> *data_in, T *data_out, T fct);
+  const T *data_in, std::complex<T> *data_out, T fct)
 
-template<typename T> void c2r(const shape_t &shape, size_t new_size,
+/* This function first carries out an r2c transform along the last axis in axes,
+   storing the result in data_out. Then, an in-place c2c transform
+   is carried out in data_out along all other axes. */
+template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const std::complex<T> *data_in, T *data_out, T fct);
+  const T *data_in, std::complex<T> *data_out, T fct)
+
+template<typename T> void c2r(const shape_t &shape_out,
+  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
+  const std::complex<T> *data_in, T *data_out, T fct)
+
+/* This function first carries out a c2c transform along all axes except the
+   last one, storing the result into a temporary array. Then, a c2r transform
+   is carried out along the last axis, storing the result in data_out. */
+template<typename T> void c2r(const shape_t &shape_out,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const std::complex<T> *data_in, T *data_out, T fct)
 
 template<typename T> void r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
