@@ -159,13 +159,29 @@ template<typename T> void ROTM90(cmplx<T> &a)
 template<typename T> class sincos_2pibyn
   {
   private:
+    template<typename Ta, typename Tb, bool bigger> struct TypeSelector
+      {};
+    template<typename Ta, typename Tb> struct TypeSelector<Ta, Tb, true>
+      { using type = Ta; };
+    template<typename Ta, typename Tb> struct TypeSelector<Ta, Tb, false>
+      { using type = Tb; };
+
+    using Thigh = typename TypeSelector<T, double, (sizeof(T)>sizeof(double))>::type;
     arr<T> data;
 
     // adapted from https://stackoverflow.com/questions/42792939/
     // CAUTION: this function only works for arguments in the range
     //          [-0.25; 0.25]!
-    void my_sincosm1pi (double a, double *restrict res)
+    void my_sincosm1pi (Thigh a, Thigh *restrict res)
       {
+      if (sizeof(Thigh)>sizeof(double)) // don't have the code for long double
+        {
+        Thigh pi = Thigh(3.141592653589793238462643383279502884197L);
+        res[1] = sin(pi*a);
+        auto s = res[1];
+        res[0] = (s*s)/(-sqrt((1-s)*(1+s))-1);
+        return;
+        }
       double s = a * a;
       /* Approximate cos(pi*x)-1 for x in [-0.25,0.25] */
       double r =     -1.0369917389758117e-4;
@@ -197,25 +213,25 @@ template<typename T> class sincos_2pibyn
       res[0]=1.; res[1]=0.;
       if (n==1) return;
       size_t l1 = size_t(sqrt(n));
-      arr<double> tmp(2*l1);
+      arr<Thigh> tmp(2*l1);
       for (size_t i=1; i<l1; ++i)
         {
-        my_sincosm1pi((2.*i)/den,&tmp[2*i]);
+        my_sincosm1pi((Thigh(2)*i)/den,&tmp[2*i]);
         res[2*i  ] = tmp[2*i]+1.;
         res[2*i+1] = tmp[2*i+1];
         }
       size_t start=l1;
       while(start<n)
         {
-        double cs[2];
-        my_sincosm1pi((2.*start)/den,cs);
+        Thigh cs[2];
+        my_sincosm1pi((Thigh(2)*start)/den,cs);
         res[2*start] = cs[0]+1.;
         res[2*start+1] = cs[1];
         size_t end = l1;
         if (start+end>n) end = n-start;
         for (size_t i=1; i<end; ++i)
           {
-          double csx[2]={tmp[2*i], tmp[2*i+1]};
+          Thigh csx[2]={tmp[2*i], tmp[2*i+1]};
           res[2*(start+i)] = ((cs[0]*csx[0] - cs[1]*csx[1] + cs[0]) + csx[0]) + 1.;
           res[2*(start+i)+1] = (cs[0]*csx[1] + cs[1]*csx[0]) + cs[1] + csx[1];
           }
@@ -256,7 +272,7 @@ template<typename T> class sincos_2pibyn
 
     void fill_first_quadrant(size_t n, T * restrict res)
       {
-      const double hsqt2 = 0.707106781186547524400844362104849;
+      constexpr Thigh hsqt2 = Thigh(0.707106781186547524400844362104849L);
       size_t quart = n>>2;
       if ((n&7)==0)
         res[quart] = res[quart+1] = hsqt2;
@@ -339,7 +355,7 @@ struct util // hack to avoid duplicate symbols
 
   static NOINLINE double cost_guess (size_t n)
     {
-    const double lfp=1.1; // penalty for non-hardcoded larger factors
+    constexpr double lfp=1.1; // penalty for non-hardcoded larger factors
     size_t ni=n;
     double result=0.;
     while ((n&1)==0)
@@ -390,9 +406,8 @@ struct util // hack to avoid duplicate symbols
       throw runtime_error("stride dimension mismatch");
     for (auto shp: shape)
       if (shp<1) throw runtime_error("zero extent detected");
-    if (inplace)
-      for (size_t i=0; i<ndim; ++i)
-        if (stride_in[i]!=stride_out[i]) throw runtime_error("stride mismatch");
+    if (inplace && (stride_in!=stride_out))
+      throw runtime_error("stride mismatch");
     }
 
   static NOINLINE void sanity_check(const shape_t &shape,
@@ -490,7 +505,8 @@ template<bool bwd, typename T> void pass3 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=3;
-  constexpr T0 tw1r=-0.5, tw1i= (bwd ? 1.: -1.) * 0.86602540378443864676;
+  constexpr T0 tw1r=-0.5,
+               tw1i= (bwd ? 1: -1) * T0(0.8660254037844386467637231707529362L);
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -592,10 +608,10 @@ template<bool bwd, typename T> void pass5 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=5;
-  constexpr T0 tw1r= 0.3090169943749474241,
-               tw1i= (bwd ? 1.: -1.) * 0.95105651629515357212,
-               tw2r= -0.8090169943749474241,
-               tw2i= (bwd ? 1.: -1.) * 0.58778525229247312917;
+  constexpr T0 tw1r= T0(0.3090169943749474241022934171828191L),
+               tw1i= (bwd ? 1: -1) * T0(0.9510565162951535721164393333793821L),
+               tw2r= T0(-0.8090169943749474241022934171828191L),
+               tw2i= (bwd ? 1: -1) * T0(0.5877852522924731291687059546390728L);
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -656,12 +672,12 @@ template<bool bwd, typename T> void pass7(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
   constexpr size_t cdim=7;
-  constexpr T0 tw1r= 0.623489801858733530525,
-               tw1i= (bwd ? 1. : -1.) * 0.7818314824680298087084,
-               tw2r= -0.222520933956314404289,
-               tw2i= (bwd ? 1. : -1.) * 0.9749279121818236070181,
-               tw3r= -0.9009688679024191262361,
-               tw3i= (bwd ? 1. : -1.) * 0.4338837391175581204758;
+  constexpr T0 tw1r= T0(0.6234898018587335305250048840042398L),
+               tw1i= (bwd ? 1 : -1) * T0(0.7818314824680298087084445266740578L),
+               tw2r= T0(-0.2225209339563144042889025644967948L),
+               tw2i= (bwd ? 1 : -1) * T0(0.9749279121818236070181316829939312L),
+               tw3r= T0(-0.9009688679024191262361023195074451L),
+               tw3i= (bwd ? 1 : -1) * T0(0.433883739117558120475768332848359L);
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -726,17 +742,17 @@ template<bool bwd, typename T> void pass7(size_t ido, size_t l1,
 template<bool bwd, typename T> void pass11 (size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
   {
-  const size_t cdim=11;
-  const T0 tw1r =        0.8412535328311811688618,
-           tw1i = (bwd ? 1. : -1.) * 0.5406408174555975821076,
-           tw2r =        0.4154150130018864255293,
-           tw2i = (bwd ? 1. : -1.) * 0.9096319953545183714117,
-           tw3r =       -0.1423148382732851404438,
-           tw3i = (bwd ? 1. : -1.) * 0.9898214418809327323761,
-           tw4r =       -0.6548607339452850640569,
-           tw4i = (bwd ? 1. : -1.) * 0.755749574354258283774,
-           tw5r =       -0.9594929736144973898904,
-           tw5i = (bwd ? 1. : -1.) * 0.2817325568414296977114;
+  constexpr size_t cdim=11;
+  constexpr T0 tw1r= T0(0.8412535328311811688618116489193677L),
+               tw1i= (bwd ? 1 : -1) * T0(0.5406408174555975821076359543186917L),
+               tw2r= T0(0.4154150130018864255292741492296232L),
+               tw2i= (bwd ? 1 : -1) * T0(0.9096319953545183714117153830790285L),
+               tw3r= T0(-0.1423148382732851404437926686163697L),
+               tw3i= (bwd ? 1 : -1) * T0(0.9898214418809327323760920377767188L),
+               tw4r= T0(-0.6548607339452850640569250724662936L),
+               tw4i= (bwd ? 1 : -1) * T0(0.7557495743542582837740358439723444L),
+               tw5r= T0(-0.9594929736144973898903680570663277L),
+               tw5i= (bwd ? 1 : -1) * T0(0.2817325568414296977114179153466169L);
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -1073,7 +1089,7 @@ template<typename T> void radf3(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=3;
-  constexpr T0 taur=-0.5, taui=0.86602540378443864676;
+  constexpr T0 taur=-0.5, taui=T0(0.8660254037844386467637231707529362L);
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1107,7 +1123,7 @@ template<typename T> void radf4(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=4;
-  constexpr T0 hsqt2=0.70710678118654752440;
+  constexpr T0 hsqt2=T0(0.707106781186547524400844362104849L);
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1148,8 +1164,10 @@ template<typename T> void radf5(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=5;
-  constexpr T0 tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
-               tr12=-0.8090169943749474241, ti12=0.58778525229247312917;
+  constexpr T0 tr11= T0(0.3090169943749474241022934171828191L),
+               ti11= T0(0.9510565162951535721164393333793821L),
+               tr12= T0(-0.8090169943749474241022934171828191L),
+               ti12= T0(0.5877852522924731291687059546390728L);
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1373,7 +1391,7 @@ template<typename T> void radb3(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=3;
-  constexpr T0 taur=-0.5, taui=0.86602540378443864676;
+  constexpr T0 taur=-0.5, taui=T0(0.8660254037844386467637231707529362L);
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1408,7 +1426,7 @@ template<typename T> void radb4(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=4;
-  constexpr T0 sqrt2=1.41421356237309504880;
+  constexpr T0 sqrt2=T0(1.414213562373095048801688724209698L);
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1454,8 +1472,10 @@ template<typename T> void radb5(size_t ido, size_t l1,
   const T * restrict cc, T * restrict ch, const T0 * restrict wa)
   {
   constexpr size_t cdim=5;
-  constexpr T0 tr11= 0.3090169943749474241, ti11=0.95105651629515357212,
-               tr12=-0.8090169943749474241, ti12=0.58778525229247312917;
+  constexpr T0 tr11= T0(0.3090169943749474241022934171828191L),
+               ti11= T0(0.9510565162951535721164393333793821L),
+               tr12= T0(-0.8090169943749474241022934171828191L),
+               ti12= T0(0.5877852522924731291687059546390728L);
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1863,7 +1883,7 @@ template<typename T0> class fftblue
         }
 
       /* initialize the zero-padded, Fourier transformed b_k. Add normalisation. */
-      T0 xn2 = 1./n2;
+      T0 xn2 = T0(1)/n2;
       bkf[0] = bk[0]*xn2;
       for (size_t m=1; m<n; ++m)
         bkf[m] = bkf[n2-m] = bk[m]*xn2;
@@ -2076,7 +2096,12 @@ template<size_t N, typename Ti, typename To> class multi_iter
   };
 
 #if defined(HAVE_VECSUPPORT)
-template<typename T> struct VTYPE{};
+template<typename T> struct VTYPE {};
+template<> struct VTYPE<long double>
+  {
+  using type = long double __attribute__ ((vector_size (sizeof(long double))));
+  static constexpr int vlen=1;
+  };
 template<> struct VTYPE<double>
   {
   using type = double __attribute__ ((vector_size (VBYTELEN)));
@@ -2088,10 +2113,7 @@ template<> struct VTYPE<float>
   static constexpr int vlen=VBYTELEN/sizeof(float);
   };
 #else
-template<typename T> struct VTYPE{};
-template<> struct VTYPE<double>
-  {  static constexpr int vlen=1; };
-template<> struct VTYPE<float>
+template<typename T> struct VTYPE
   { static constexpr int vlen=1; };
 #endif
 
