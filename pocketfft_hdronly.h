@@ -432,8 +432,6 @@ struct util // hack to avoid duplicate symbols
     if (ndim<1) throw runtime_error("ndim must be >= 1");
     if ((stride_in.size()!=ndim) || (stride_out.size()!=ndim))
       throw runtime_error("stride dimension mismatch");
-    for (auto shp: shape)
-      if (shp<1) throw runtime_error("zero extent detected");
     if (inplace && (stride_in!=stride_out))
       throw runtime_error("stride mismatch");
     }
@@ -2437,6 +2435,7 @@ template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const std::complex<T> *data_in, std::complex<T> *data_out, T fct)
   {
   using namespace detail;
+  if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<cmplx<T>> ain(data_in, shape, stride_in),
                   aout(data_out, shape, stride_out);
@@ -2448,9 +2447,12 @@ template<typename T> void r2c(const shape_t &shape_in,
   const T *data_in, std::complex<T> *data_out, T fct)
   {
   using namespace detail;
+  if (util::prod(shape_in)==0) return;
   util::sanity_check(shape_in, stride_in, stride_out, false, axis);
   ndarr<T> ain(data_in, shape_in, stride_in);
-  ndarr<cmplx<T>> aout(data_out, shape_in, stride_out); // FIXME
+  shape_t shape_out(shape_in);
+  shape_out[axis] = shape_in[axis]/2 + 1;
+  ndarr<cmplx<T>> aout(data_out, shape_out, stride_out);
   general_r2c(ain, aout, axis, fct);
   }
 
@@ -2459,6 +2461,7 @@ template<typename T> void r2c(const shape_t &shape_in,
   const T *data_in, std::complex<T> *data_out, T fct)
   {
   using namespace detail;
+  if (util::prod(shape_in)==0) return;
   util::sanity_check(shape_in, stride_in, stride_out, false, axes);
   r2c(shape_in, stride_in, stride_out, axes.back(), data_in, data_out, fct);
   if (axes.size()==1) return;
@@ -2475,6 +2478,7 @@ template<typename T> void c2r(const shape_t &shape_out,
   const std::complex<T> *data_in, T *data_out, T fct)
   {
   using namespace detail;
+  if (util::prod(shape_out)==0) return;
   util::sanity_check(shape_out, stride_in, stride_out, false, axis);
   shape_t shape_in(shape_out);
   shape_in[axis] = shape_out[axis]/2 + 1;
@@ -2488,6 +2492,7 @@ template<typename T> void c2r(const shape_t &shape_out,
   const std::complex<T> *data_in, T *data_out, T fct)
   {
   using namespace detail;
+  if (util::prod(shape_out)==0) return;
   if (axes.size()==1)
     {
     c2r(shape_out, stride_in, stride_out, axes[0], data_in, data_out, fct);
@@ -2514,6 +2519,7 @@ template<typename T> void r2r_fftpack(const shape_t &shape,
   bool forward, const T *data_in, T *data_out, T fct)
   {
   using namespace detail;
+  if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axis);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
   general_r(ain, aout, axis, forward, fct);
@@ -2524,6 +2530,7 @@ template<typename T> void r2r_hartley(const shape_t &shape,
   const T *data_in, T *data_out, T fct)
   {
   using namespace detail;
+  if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
   general_hartley(ain, aout, axes, fct);
