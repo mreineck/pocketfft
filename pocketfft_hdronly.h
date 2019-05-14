@@ -2126,7 +2126,7 @@ template<size_t N, typename Ti, typename To> class multi_iter
       for (size_t i=0; i<pos.size(); ++i)
         {
         if (i==idim) continue;
-        chunk/=iarr.shape(i);
+        chunk /= iarr.shape(i);
         size_t n_advance = lo/chunk;
         pos[i] += n_advance;
         p_ii += n_advance*iarr.stride(i);
@@ -2206,7 +2206,7 @@ template<typename T> arr<char> alloc_tmp(const shape_t &shape,
 
 template<typename T> NOINLINE void general_c(
   const ndarr<cmplx<T>> &in, ndarr<cmplx<T>> &out,
-  const shape_t &axes, bool forward, T fct)
+  const shape_t &axes, bool forward, T fct, size_t nthreads=1)
   {
   unique_ptr<pocketfft_c<T>> plan;
 
@@ -2218,11 +2218,12 @@ template<typename T> NOINLINE void general_c(
       plan.reset(new pocketfft_c<T>(len));
 
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if (util::run_parallel(in.shape(), axes[iax]))
+#pragma omp parallel if(util::run_parallel(in.shape(), axes[iax])) num_threads(nthreads)
 #endif
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(cmplx<T>));
-    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax], util::nthreads(), util::thread_num());
+    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax],
+      util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2268,7 +2269,8 @@ template<typename T> NOINLINE void general_c(
   }
 
 template<typename T> NOINLINE void general_hartley(
-  const ndarr<T> &in, ndarr<T> &out, const shape_t &axes, T fct)
+  const ndarr<T> &in, ndarr<T> &out, const shape_t &axes, T fct,
+  size_t nthreads=1)
   {
   unique_ptr<pocketfft_r<T>> plan;
 
@@ -2280,11 +2282,12 @@ template<typename T> NOINLINE void general_hartley(
       plan.reset(new pocketfft_r<T>(len));
 
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if (util::run_parallel(in.shape(), axes[iax]))
+#pragma omp parallel if(util::run_parallel(in.shape(), axes[iax])) num_threads(nthreads)
 #endif
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax], util::nthreads(), util::thread_num());
+    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax],
+      util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2331,17 +2334,19 @@ template<typename T> NOINLINE void general_hartley(
   }
 
 template<typename T> NOINLINE void general_r2c(
-  const ndarr<T> &in, ndarr<cmplx<T>> &out, size_t axis, T fct)
+  const ndarr<T> &in, ndarr<cmplx<T>> &out, size_t axis, T fct,
+  size_t nthreads=1)
   {
   pocketfft_r<T> plan(in.shape(axis));
   constexpr int vlen = VTYPE<T>::vlen;
   size_t len=in.shape(axis);
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if (util::run_parallel(in.shape(), axis))
+#pragma omp parallel if(util::run_parallel(in.shape(), axis)) num_threads(nthreads)
 #endif
 {
   auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-  multi_iter<vlen, T, cmplx<T>> it(in, out, axis, util::nthreads(), util::thread_num());
+  multi_iter<vlen, T, cmplx<T>> it(in, out, axis,
+    util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2381,17 +2386,19 @@ template<typename T> NOINLINE void general_r2c(
 } // end of parallel region
   }
 template<typename T> NOINLINE void general_c2r(
-  const ndarr<cmplx<T>> &in, ndarr<T> &out, size_t axis, T fct)
+  const ndarr<cmplx<T>> &in, ndarr<T> &out, size_t axis, T fct,
+  size_t nthreads=1)
   {
   pocketfft_r<T> plan(out.shape(axis));
   constexpr int vlen = VTYPE<T>::vlen;
   size_t len=out.shape(axis);
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if (util::run_parallel(in.shape(), axis))
+#pragma omp parallel if(util::run_parallel(in.shape(), axis)) num_threads(nthreads)
 #endif
 {
   auto storage = alloc_tmp<T>(out.shape(), len, sizeof(T));
-  multi_iter<vlen, cmplx<T>, T> it(in, out, axis, util::nthreads(), util::thread_num());
+  multi_iter<vlen, cmplx<T>, T> it(in, out, axis,
+    util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2436,17 +2443,19 @@ template<typename T> NOINLINE void general_c2r(
   }
 
 template<typename T> NOINLINE void general_r(
-  const ndarr<T> &in, ndarr<T> &out, size_t axis, bool forward, T fct)
+  const ndarr<T> &in, ndarr<T> &out, size_t axis, bool forward, T fct,
+  size_t nthreads=1)
   {
   constexpr int vlen = VTYPE<T>::vlen;
   size_t len=in.shape(axis);
   pocketfft_r<T> plan(len);
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if (util::run_parallel(in.shape(), axis))
+#pragma omp parallel if(util::run_parallel(in.shape(), axis)) num_threads(nthreads)
 #endif
 {
   auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-  multi_iter<vlen, T, T> it(in, out, axis, util::nthreads(), util::thread_num());
+  multi_iter<vlen, T, T> it(in, out, axis,
+    util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2495,19 +2504,20 @@ template<typename T> NOINLINE void general_r(
 
 template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
-  const std::complex<T> *data_in, std::complex<T> *data_out, T fct)
+  const std::complex<T> *data_in, std::complex<T> *data_out, T fct,
+  size_t nthreads=1)
   {
   using namespace detail;
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<cmplx<T>> ain(data_in, shape, stride_in),
                   aout(data_out, shape, stride_out);
-  general_c(ain, aout, axes, forward, fct);
+  general_c(ain, aout, axes, forward, fct, nthreads);
   }
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const T *data_in, std::complex<T> *data_out, T fct)
+  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
   {
   using namespace detail;
   if (util::prod(shape_in)==0) return;
@@ -2516,17 +2526,18 @@ template<typename T> void r2c(const shape_t &shape_in,
   shape_t shape_out(shape_in);
   shape_out[axis] = shape_in[axis]/2 + 1;
   ndarr<cmplx<T>> aout(data_out, shape_out, stride_out);
-  general_r2c(ain, aout, axis, fct);
+  general_r2c(ain, aout, axis, fct, nthreads);
   }
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const T *data_in, std::complex<T> *data_out, T fct)
+  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
   {
   using namespace detail;
   if (util::prod(shape_in)==0) return;
   util::sanity_check(shape_in, stride_in, stride_out, false, axes);
-  r2c(shape_in, stride_in, stride_out, axes.back(), data_in, data_out, fct);
+  r2c(shape_in, stride_in, stride_out, axes.back(), data_in, data_out, fct,
+    nthreads);
   if (axes.size()==1) return;
 
   shape_t shape_out(shape_in);
@@ -2538,7 +2549,7 @@ template<typename T> void r2c(const shape_t &shape_in,
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const std::complex<T> *data_in, T *data_out, T fct)
+  const std::complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
   {
   using namespace detail;
   if (util::prod(shape_out)==0) return;
@@ -2547,20 +2558,18 @@ template<typename T> void c2r(const shape_t &shape_out,
   shape_in[axis] = shape_out[axis]/2 + 1;
   ndarr<cmplx<T>> ain(data_in, shape_in, stride_in);
   ndarr<T> aout(data_out, shape_out, stride_out);
-  general_c2r(ain, aout, axis, fct);
+  general_c2r(ain, aout, axis, fct, nthreads);
   }
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const std::complex<T> *data_in, T *data_out, T fct)
+  const std::complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
   {
   using namespace detail;
   if (util::prod(shape_out)==0) return;
   if (axes.size()==1)
-    {
-    c2r(shape_out, stride_in, stride_out, axes[0], data_in, data_out, fct);
-    return;
-    }
+    return c2r(shape_out, stride_in, stride_out, axes[0], data_in, data_out,
+      fct, nthreads);
   util::sanity_check(shape_out, stride_in, stride_out, false, axes);
   auto shape_in = shape_out;
   shape_in[axes.back()] = shape_out[axes.back()]/2 + 1;
@@ -2572,31 +2581,31 @@ template<typename T> void c2r(const shape_t &shape_out,
   arr<complex<T>> tmp(nval);
   auto newaxes = shape_t({axes.begin(), --axes.end()});
   c2c(shape_in, stride_in, stride_inter, newaxes, false, data_in, tmp.data(),
-    T(1));
+    T(1), nthreads);
   c2r(shape_out, stride_inter, stride_out, axes.back(), tmp.data(), data_out,
-    fct);
+    fct, nthreads);
   }
 
 template<typename T> void r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  bool forward, const T *data_in, T *data_out, T fct)
+  bool forward, const T *data_in, T *data_out, T fct, size_t nthreads=1)
   {
   using namespace detail;
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axis);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
-  general_r(ain, aout, axis, forward, fct);
+  general_r(ain, aout, axis, forward, fct, nthreads);
   }
 
 template<typename T> void r2r_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const T *data_in, T *data_out, T fct)
+  const T *data_in, T *data_out, T fct, size_t nthreads=1)
   {
   using namespace detail;
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
-  general_hartley(ain, aout, axes, fct);
+  general_hartley(ain, aout, axes, fct, nthreads);
   }
 
 } // namespace pocketfft
