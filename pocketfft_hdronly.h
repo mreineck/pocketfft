@@ -51,6 +51,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #if defined(_WIN32)
 #include <malloc.h>
 #endif
+#ifdef POCKETFFT_OPENMP
+#include <omp.h>
+#endif
+
 
 #ifdef __GNUC__
 #define NOINLINE __attribute__((noinline))
@@ -457,6 +461,14 @@ struct util // hack to avoid duplicate symbols
     sanity_check(shape, stride_in, stride_out, inplace);
     if (axis>=shape.size()) throw runtime_error("bad axis number");
     }
+
+#ifdef POCKETFFT_OPENMP
+    static int nthreads() { return omp_get_num_threads(); }
+    static int thread_num() { return omp_get_thread_num(); }
+#else
+    static int nthreads() { return 1; }
+    static int thread_num() { return 0; }
+#endif
   };
 
 #define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
@@ -2091,11 +2103,34 @@ template<size_t N, typename Ti, typename To> class multi_iter
       }
 
   public:
-    multi_iter(const ndarr<Ti> &iarr_, ndarr<To> &oarr_, size_t idim_)
+    multi_iter(const ndarr<Ti> &iarr_, ndarr<To> &oarr_, size_t idim_,
+               size_t nshares=1, size_t myshare=0)
       : pos(iarr_.ndim(), 0), iarr(iarr_), oarr(oarr_), p_ii(0),
         str_i(iarr.stride(idim_)), p_oi(0), str_o(oarr.stride(idim_)),
         idim(idim_), rem(iarr.size()/iarr.shape(idim))
-      {}
+      {
+      if (nshares==1) return;
+      if (nshares==0) throw runtime_error("can't run with zero threads");
+      if (myshare>=nshares) throw runtime_error("impossible share requested");
+      size_t nbase = rem/nshares;
+      size_t additional = rem%nshares;
+      size_t lo = myshare*nbase + ((myshare<additional) ? myshare : additional);
+      size_t hi = lo+nbase+(myshare<additional);
+      size_t todo = hi-lo;
+
+      size_t chunk = rem;
+      for (size_t i=0; i<pos.size(); ++i)
+        {
+        if (i==idim) continue;
+        chunk/=iarr.shape(i);
+        size_t n_advance = lo/chunk;
+        pos[i] += n_advance;
+        p_ii += n_advance*iarr.stride(i);
+        p_oi += n_advance*oarr.stride(i);
+        lo -= n_advance*chunk;
+        }
+      rem = todo;
+      }
     void advance(size_t n)
       {
       if (rem<n) throw runtime_error("underrun");
@@ -2175,10 +2210,15 @@ template<typename T> NOINLINE void general_c(
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
     constexpr int vlen = VTYPE<T>::vlen;
-    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax]);
-    size_t len=it.length_in();
+    size_t len=in.shape(axes[iax]);
     if ((!plan) || (len!=plan->length()))
       plan.reset(new pocketfft_c<T>(len));
+
+#ifdef POCKETFFT_OPENMP
+#pragma omp parallel
+#endif
+{
+    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax], util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2218,6 +2258,7 @@ template<typename T> NOINLINE void general_c(
           it.out(i) = tdata[i];
         }
       }
+} // end of parallel region
     fct = T(1); // factor has been applied, use 1 for remaining axes
     }
   }
