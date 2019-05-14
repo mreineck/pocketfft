@@ -465,9 +465,13 @@ struct util // hack to avoid duplicate symbols
 #ifdef POCKETFFT_OPENMP
     static int nthreads() { return omp_get_num_threads(); }
     static int thread_num() { return omp_get_thread_num(); }
+    static bool run_parallel (const shape_t &shape, size_t axis)
+      { return prod(shape)/shape[axis] > 20; } // FIXME, needs improvement
 #else
     static int nthreads() { return 1; }
     static int thread_num() { return 0; }
+    static bool run_parallel (const shape_t &, size_t)
+      { return false; }
 #endif
   };
 
@@ -2204,7 +2208,6 @@ template<typename T> NOINLINE void general_c(
   const ndarr<cmplx<T>> &in, ndarr<cmplx<T>> &out,
   const shape_t &axes, bool forward, T fct)
   {
-  auto storage = alloc_tmp<T>(in.shape(), axes, sizeof(cmplx<T>));
   unique_ptr<pocketfft_c<T>> plan;
 
   for (size_t iax=0; iax<axes.size(); ++iax)
@@ -2215,9 +2218,10 @@ template<typename T> NOINLINE void general_c(
       plan.reset(new pocketfft_c<T>(len));
 
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel
+#pragma omp parallel if (util::run_parallel(in.shape(), axes[iax]))
 #endif
 {
+    auto storage = alloc_tmp<T>(in.shape(), len, sizeof(cmplx<T>));
     multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax], util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
     if (vlen>1)
@@ -2266,16 +2270,21 @@ template<typename T> NOINLINE void general_c(
 template<typename T> NOINLINE void general_hartley(
   const ndarr<T> &in, ndarr<T> &out, const shape_t &axes, T fct)
   {
-  auto storage = alloc_tmp<T>(in.shape(), axes, sizeof(T));
   unique_ptr<pocketfft_r<T>> plan;
 
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
     constexpr int vlen = VTYPE<T>::vlen;
-    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax]);
-    size_t len=it.length_in();
+    size_t len=in.shape(axes[iax]);
     if ((!plan) || (len!=plan->length()))
       plan.reset(new pocketfft_r<T>(len));
+
+#ifdef POCKETFFT_OPENMP
+#pragma omp parallel if (util::run_parallel(in.shape(), axes[iax]))
+#endif
+{
+    auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
+    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax], util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2316,6 +2325,7 @@ template<typename T> NOINLINE void general_hartley(
       if (i<len)
         it.out(i1) = tdata[i];
       }
+} // end of parallel region
     fct = T(1); // factor has been applied, use 1 for remaining axes
     }
   }
@@ -2323,12 +2333,15 @@ template<typename T> NOINLINE void general_hartley(
 template<typename T> NOINLINE void general_r2c(
   const ndarr<T> &in, ndarr<cmplx<T>> &out, size_t axis, T fct)
   {
-  auto storage = alloc_tmp<T>(in.shape(), in.shape(axis), sizeof(T));
-
   pocketfft_r<T> plan(in.shape(axis));
   constexpr int vlen = VTYPE<T>::vlen;
-  multi_iter<vlen, T, cmplx<T>> it(in, out, axis);
   size_t len=in.shape(axis);
+#ifdef POCKETFFT_OPENMP
+#pragma omp parallel if (util::run_parallel(in.shape(), axis))
+#endif
+{
+  auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
+  multi_iter<vlen, T, cmplx<T>> it(in, out, axis, util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2365,16 +2378,20 @@ template<typename T> NOINLINE void general_r2c(
     if (i<len)
       it.out(ii).Set(tdata[i]);
     }
+} // end of parallel region
   }
 template<typename T> NOINLINE void general_c2r(
   const ndarr<cmplx<T>> &in, ndarr<T> &out, size_t axis, T fct)
   {
-  auto storage = alloc_tmp<T>(out.shape(), out.shape(axis), sizeof(T));
   pocketfft_r<T> plan(out.shape(axis));
-
   constexpr int vlen = VTYPE<T>::vlen;
-  multi_iter<vlen, cmplx<T>, T> it(in, out, axis);
   size_t len=out.shape(axis);
+#ifdef POCKETFFT_OPENMP
+#pragma omp parallel if (util::run_parallel(in.shape(), axis))
+#endif
+{
+  auto storage = alloc_tmp<T>(out.shape(), len, sizeof(T));
+  multi_iter<vlen, cmplx<T>, T> it(in, out, axis, util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2415,17 +2432,21 @@ template<typename T> NOINLINE void general_c2r(
     for (size_t i=0; i<len; ++i)
       it.out(i) = tdata[i];
     }
+} // end of parallel region
   }
 
 template<typename T> NOINLINE void general_r(
   const ndarr<T> &in, ndarr<T> &out, size_t axis, bool forward, T fct)
   {
-  auto storage = alloc_tmp<T>(in.shape(), in.shape(axis), sizeof(T));
-
   constexpr int vlen = VTYPE<T>::vlen;
-  multi_iter<vlen, T, T> it(in, out, axis);
-  size_t len=it.length_in();
+  size_t len=in.shape(axis);
   pocketfft_r<T> plan(len);
+#ifdef POCKETFFT_OPENMP
+#pragma omp parallel if (util::run_parallel(in.shape(), axis))
+#endif
+{
+  auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
+  multi_iter<vlen, T, T> it(in, out, axis, util::nthreads(), util::thread_num());
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2465,6 +2486,7 @@ template<typename T> NOINLINE void general_r(
         it.out(i) = tdata[i];
       }
     }
+} // end of parallel region
   }
 
 #undef HAVE_VECSUPPORT
