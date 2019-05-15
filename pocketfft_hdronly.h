@@ -204,16 +204,17 @@ template<typename T> class sincos_2pibyn
     // adapted from https://stackoverflow.com/questions/42792939/
     // CAUTION: this function only works for arguments in the range
     //          [-0.25; 0.25]!
-    void my_sincosm1pi (Thigh a, Thigh *restrict res)
+    void my_sincosm1pi (Thigh a_, Thigh *restrict res)
       {
       if (sizeof(Thigh)>sizeof(double)) // don't have the code for long double
         {
         Thigh pi = Thigh(3.141592653589793238462643383279502884197L);
-        res[1] = sin(pi*a);
+        res[1] = sin(pi*a_);
         auto s = res[1];
         res[0] = (s*s)/(-sqrt((1-s)*(1+s))-1);
         return;
         }
+      double a = double(a_);
       double s = a * a;
       /* Approximate cos(pi*x)-1 for x in [-0.25,0.25] */
       double r =     -1.0369917389758117e-4;
@@ -248,24 +249,24 @@ template<typename T> class sincos_2pibyn
       arr<Thigh> tmp(2*l1);
       for (size_t i=1; i<l1; ++i)
         {
-        my_sincosm1pi((Thigh(2)*i)/den,&tmp[2*i]);
-        res[2*i  ] = tmp[2*i]+1.;
-        res[2*i+1] = tmp[2*i+1];
+        my_sincosm1pi(Thigh(2*i)/Thigh(den),&tmp[2*i]);
+        res[2*i  ] = T(tmp[2*i]+1);
+        res[2*i+1] = T(tmp[2*i+1]);
         }
       size_t start=l1;
       while(start<n)
         {
         Thigh cs[2];
-        my_sincosm1pi((Thigh(2)*start)/den,cs);
-        res[2*start] = cs[0]+1.;
-        res[2*start+1] = cs[1];
+        my_sincosm1pi((Thigh(2*start))/Thigh(den),cs);
+        res[2*start] = T(cs[0]+1);
+        res[2*start+1] = T(cs[1]);
         size_t end = l1;
         if (start+end>n) end = n-start;
         for (size_t i=1; i<end; ++i)
           {
           Thigh csx[2]={tmp[2*i], tmp[2*i+1]};
-          res[2*(start+i)] = ((cs[0]*csx[0] - cs[1]*csx[1] + cs[0]) + csx[0]) + 1.;
-          res[2*(start+i)+1] = (cs[0]*csx[1] + cs[1]*csx[0]) + cs[1] + csx[1];
+          res[2*(start+i)] = T(((cs[0]*csx[0] - cs[1]*csx[1] + cs[0]) + csx[0]) + 1);
+          res[2*(start+i)+1] = T((cs[0]*csx[1] + cs[1]*csx[0]) + cs[1] + csx[1]);
           }
         start += l1;
         }
@@ -288,23 +289,23 @@ template<typename T> class sincos_2pibyn
 
     void calc_first_half(size_t n, T * restrict res)
       {
-      int ndone=(n+1)>>1;
+      int ndone=int(n+1)>>1;
       T * p = res+n-1;
       calc_first_octant(n<<2, p);
-      int i4=0, in=n, i=0;
+      int i4=0, in=int(n), i=0;
       for (; i4<=in-i4; ++i, i4+=4) // octant 0
         { res[2*i] = p[2*i4]; res[2*i+1] = p[2*i4+1]; }
       for (; i4-in <= 0; ++i, i4+=4) // octant 1
-        { int xm = in-i4; res[2*i] = p[2*xm+1]; res[2*i+1] = p[2*xm]; }
+        { auto xm = in-i4; res[2*i] = p[2*xm+1]; res[2*i+1] = p[2*xm]; }
       for (; i4<=3*in-i4; ++i, i4+=4) // octant 2
-        { int xm = i4-in; res[2*i] = -p[2*xm+1]; res[2*i+1] = p[2*xm]; }
+        { auto xm = i4-in; res[2*i] = -p[2*xm+1]; res[2*i+1] = p[2*xm]; }
       for (; i<ndone; ++i, i4+=4) // octant 3
-        { int xm = 2*in-i4; res[2*i] = -p[2*xm]; res[2*i+1] = p[2*xm+1]; }
+        { auto xm = 2*in-i4; res[2*i] = -p[2*xm]; res[2*i+1] = p[2*xm+1]; }
       }
 
     void fill_first_quadrant(size_t n, T * restrict res)
       {
-      constexpr Thigh hsqt2 = Thigh(0.707106781186547524400844362104849L);
+      constexpr T hsqt2 = T(0.707106781186547524400844362104849L);
       size_t quart = n>>2;
       if ((n&7)==0)
         res[quart] = res[quart+1] = hsqt2;
@@ -372,13 +373,13 @@ struct util // hack to avoid duplicate symbols
     while ((n&1)==0)
       { res=2; n>>=1; }
 
-    size_t limit=size_t(sqrt(n+0.01));
+    size_t limit=size_t(sqrt(double(n)+0.01));
     for (size_t x=3; x<=limit; x+=2)
     while ((n/x)*x==n)
       {
       res=x;
       n/=x;
-      limit=size_t(sqrt(n+0.01));
+      limit=size_t(sqrt(double(n)+0.01));
       }
     if (n>1) res=n;
 
@@ -393,17 +394,17 @@ struct util // hack to avoid duplicate symbols
     while ((n&1)==0)
       { result+=2; n>>=1; }
 
-    size_t limit=size_t(sqrt(n+0.01));
+    size_t limit=size_t(sqrt(double(n)+0.01));
     for (size_t x=3; x<=limit; x+=2)
     while ((n/x)*x==n)
       {
-      result+= (x<=5) ? x : lfp*x; // penalize larger prime factors
+      result+= (x<=5) ? double(x) : lfp*double(x); // penalize larger prime factors
       n/=x;
-      limit=size_t(sqrt(n+0.01));
+      limit=size_t(sqrt(double(n)+0.01));
       }
-    if (n>1) result+=(n<=5) ? n : lfp*n;
+    if (n>1) result+=(n<=5) ? double(n) : lfp*double(n);
 
-    return result*ni;
+    return result*double(ni);
     }
 
   /* returns the smallest composite of 2, 3, 5, 7 and 11 which is >= n */
@@ -463,15 +464,18 @@ struct util // hack to avoid duplicate symbols
     }
 
 #ifdef POCKETFFT_OPENMP
-    static int nthreads() { return omp_get_num_threads(); }
-    static int thread_num() { return omp_get_thread_num(); }
-    static bool run_parallel (const shape_t &shape, size_t axis)
-      { return prod(shape)/shape[axis] > 20; } // FIXME, needs improvement
+    static size_t nthreads() { return omp_get_num_threads(); }
+    static size_t thread_num() { return omp_get_thread_num(); }
+    static size_t thread_count (size_t nthreads, const shape_t &shape,
+      size_t axis)
+      {
+      if (nthreads==1) return 1;
+      if (prod(shape)/shape[axis] < 20) return 1;
+      return (nthreads==0) ? omp_get_max_threads() : nthreads;
+      }
 #else
-    static int nthreads() { return 1; }
-    static int thread_num() { return 0; }
-    static bool run_parallel (const shape_t &, size_t)
-      { return false; }
+    static size_t nthreads() { return 1; }
+    static size_t thread_num() { return 0; }
 #endif
   };
 
@@ -1414,8 +1418,8 @@ template<typename T> void radb2(size_t ido, size_t l1, const T * restrict cc,
   if ((ido&1)==0)
     for (size_t k=0; k<l1; k++)
       {
-      CH(ido-1,k,0) = 2.*CC(ido-1,0,k);
-      CH(ido-1,k,1) =-2.*CC(0    ,1,k);
+      CH(ido-1,k,0) = 2*CC(ido-1,0,k);
+      CH(ido-1,k,1) =-2*CC(0    ,1,k);
       }
   if (ido<=2) return;
   for (size_t k=0; k<l1;++k)
@@ -1437,10 +1441,10 @@ template<typename T> void radb3(size_t ido, size_t l1,
 
   for (size_t k=0; k<l1; k++)
     {
-    T tr2=2.*CC(ido-1,1,k);
+    T tr2=2*CC(ido-1,1,k);
     T cr2=CC(0,0,k)+taur*tr2;
     CH(0,k,0)=CC(0,0,k)+tr2;
-    T ci3=T0(2.)*taui*CC(0,2,k);
+    T ci3=2*taui*CC(0,2,k);
     PM (CH(0,k,2),CH(0,k,1),cr2,ci3);
     }
   if (ido==1) return;
@@ -1474,8 +1478,8 @@ template<typename T> void radb4(size_t ido, size_t l1,
     {
     T tr1, tr2;
     PM (tr2,tr1,CC(0,0,k),CC(ido-1,3,k))
-    T tr3=2.*CC(ido-1,1,k);
-    T tr4=2.*CC(0,2,k);
+    T tr3=2*CC(ido-1,1,k);
+    T tr4=2*CC(0,2,k);
     PM (CH(0,k,0),CH(0,k,2),tr2,tr3)
     PM (CH(0,k,3),CH(0,k,1),tr1,tr4)
     }
@@ -1925,7 +1929,7 @@ template<typename T0> class fftblue
         }
 
       /* initialize the zero-padded, Fourier transformed b_k. Add normalisation. */
-      T0 xn2 = T0(1)/n2;
+      T0 xn2 = T0(1)/T0(n2);
       bkf[0] = bk[0]*xn2;
       for (size_t m=1; m<n; ++m)
         bkf[m] = bkf[n2-m] = bk[m]*xn2;
@@ -1946,7 +1950,7 @@ template<typename T0> class fftblue
       tmp[0].Set(c[0],c[0]*0);
       memcpy (reinterpret_cast<void *>(tmp.data()+1),
               reinterpret_cast<void *>(c+1), (n-1)*sizeof(T));
-      if ((n&1)==0) tmp[n/2].i=c[0]*0.;
+      if ((n&1)==0) tmp[n/2].i=T0(0)*c[0];
       for (size_t m=1; 2*m<n; ++m)
         tmp[n-m].Set(tmp[m].r, -tmp[m].i);
       fft<true>(tmp.data(),fct);
@@ -1958,7 +1962,7 @@ template<typename T0> class fftblue
       {
       arr<cmplx<T>> tmp(n);
       for (size_t m=0; m<n; ++m)
-        tmp[m].Set(c[m], 0.*c[m]);
+        tmp[m].Set(c[m], T0(0)*c[m]);
       fft<false>(tmp.data(),fct);
       c[0] = tmp[0].r;
       memcpy (c+1, tmp.data()+1, (n-1)*sizeof(T));
@@ -1981,7 +1985,8 @@ template<typename T0> class pocketfft_c
       : len(length)
       {
       if (length==0) throw runtime_error("zero-length FFT requested");
-      if ((length<50) || (util::largest_prime_factor(length)<=sqrt(length)))
+      if ((length<50) ||
+          (double(util::largest_prime_factor(length))<=sqrt(double(length))))
         {
         packplan=unique_ptr<cfftp<T0>>(new cfftp<T0>(length));
         return;
@@ -2093,28 +2098,30 @@ template<size_t N, typename Ti, typename To> class multi_iter
 
     void advance_i()
       {
-      for (int i=pos.size()-1; i>=0; --i)
+      for (int i_=int(pos.size())-1; i_>=0; --i_)
         {
-        if (i==int(idim)) continue;
+        auto i = size_t(i_);
+        if (i==idim) continue;
         p_ii += iarr.stride(i);
         p_oi += oarr.stride(i);
         if (++pos[i] < iarr.shape(i))
           return;
         pos[i] = 0;
-        p_ii -= iarr.shape(i)*iarr.stride(i);
-        p_oi -= oarr.shape(i)*oarr.stride(i);
+        p_ii -= ptrdiff_t(iarr.shape(i))*iarr.stride(i);
+        p_oi -= ptrdiff_t(oarr.shape(i))*oarr.stride(i);
         }
       }
 
   public:
-    multi_iter(const ndarr<Ti> &iarr_, ndarr<To> &oarr_, size_t idim_,
-               size_t nshares=1, size_t myshare=0)
+    multi_iter(const ndarr<Ti> &iarr_, ndarr<To> &oarr_, size_t idim_)
       : pos(iarr_.ndim(), 0), iarr(iarr_), oarr(oarr_), p_ii(0),
         str_i(iarr.stride(idim_)), p_oi(0), str_o(oarr.stride(idim_)),
         idim(idim_), rem(iarr.size()/iarr.shape(idim))
       {
+      auto nshares = util::nthreads();
       if (nshares==1) return;
       if (nshares==0) throw runtime_error("can't run with zero threads");
+      auto myshare = util::thread_num();
       if (myshare>=nshares) throw runtime_error("impossible share requested");
       size_t nbase = rem/nshares;
       size_t additional = rem%nshares;
@@ -2129,8 +2136,8 @@ template<size_t N, typename Ti, typename To> class multi_iter
         chunk /= iarr.shape(i);
         size_t n_advance = lo/chunk;
         pos[i] += n_advance;
-        p_ii += n_advance*iarr.stride(i);
-        p_oi += n_advance*oarr.stride(i);
+        p_ii += ptrdiff_t(n_advance)*iarr.stride(i);
+        p_oi += ptrdiff_t(n_advance)*oarr.stride(i);
         lo -= n_advance*chunk;
         }
       rem = todo;
@@ -2146,10 +2153,10 @@ template<size_t N, typename Ti, typename To> class multi_iter
         }
       rem -= n;
       }
-    const Ti &in (size_t i) const { return iarr[p_i[0] + i*str_i]; }
-    const Ti &in (size_t j, size_t i) const { return iarr[p_i[j] + i*str_i]; }
-    To &out (size_t i) { return oarr[p_o[0] + i*str_o]; }
-    To &out (size_t j, size_t i) { return oarr[p_o[j] + i*str_o]; }
+    const Ti &in (size_t i) const { return iarr[p_i[0] + ptrdiff_t(i)*str_i]; }
+    const Ti &in (size_t j, size_t i) const { return iarr[p_i[j] + ptrdiff_t(i)*str_i]; }
+    To &out (size_t i) { return oarr[p_o[0] + ptrdiff_t(i)*str_o]; }
+    To &out (size_t j, size_t i) { return oarr[p_o[j] + ptrdiff_t(i)*str_o]; }
     size_t length_in() const { return iarr.shape(idim); }
     size_t length_out() const { return oarr.shape(idim); }
     ptrdiff_t stride_in() const { return str_i; }
@@ -2165,21 +2172,21 @@ template<typename T> struct VTYPE {};
 template<> struct VTYPE<long double>
   {
   using type = long double __attribute__ ((vector_size (sizeof(long double))));
-  static constexpr int vlen=1;
+  static constexpr size_t vlen=1;
   };
 template<> struct VTYPE<double>
   {
   using type = double __attribute__ ((vector_size (VBYTELEN)));
-  static constexpr int vlen=VBYTELEN/sizeof(double);
+  static constexpr size_t vlen=VBYTELEN/sizeof(double);
   };
 template<> struct VTYPE<float>
   {
   using type = float __attribute__ ((vector_size (VBYTELEN)));
-  static constexpr int vlen=VBYTELEN/sizeof(float);
+  static constexpr size_t vlen=VBYTELEN/sizeof(float);
   };
 #else
 template<typename T> struct VTYPE
-  { static constexpr int vlen=1; };
+  { static constexpr size_t vlen=1; };
 #endif
 
 template<typename T> arr<char> alloc_tmp(const shape_t &shape,
@@ -2212,18 +2219,17 @@ template<typename T> NOINLINE void general_c(
 
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
-    constexpr int vlen = VTYPE<T>::vlen;
+    constexpr auto vlen = VTYPE<T>::vlen;
     size_t len=in.shape(axes[iax]);
     if ((!plan) || (len!=plan->length()))
       plan.reset(new pocketfft_c<T>(len));
 
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if(util::run_parallel(in.shape(), axes[iax])) num_threads(nthreads)
+#pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axes[iax]))
 #endif
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(cmplx<T>));
-    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax],
-      util::nthreads(), util::thread_num());
+    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax]);
 #if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2276,18 +2282,17 @@ template<typename T> NOINLINE void general_hartley(
 
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
-    constexpr int vlen = VTYPE<T>::vlen;
+    constexpr auto vlen = VTYPE<T>::vlen;
     size_t len=in.shape(axes[iax]);
     if ((!plan) || (len!=plan->length()))
       plan.reset(new pocketfft_r<T>(len));
 
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if(util::run_parallel(in.shape(), axes[iax])) num_threads(nthreads)
+#pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axes[iax]))
 #endif
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax],
-      util::nthreads(), util::thread_num());
+    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax]);
 #if defined(HAVE_VECSUPPORT)
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2338,15 +2343,14 @@ template<typename T> NOINLINE void general_r2c(
   size_t nthreads=1)
   {
   pocketfft_r<T> plan(in.shape(axis));
-  constexpr int vlen = VTYPE<T>::vlen;
+  constexpr auto vlen = VTYPE<T>::vlen;
   size_t len=in.shape(axis);
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if(util::run_parallel(in.shape(), axis)) num_threads(nthreads)
+#pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axis))
 #endif
 {
   auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-  multi_iter<vlen, T, cmplx<T>> it(in, out, axis,
-    util::nthreads(), util::thread_num());
+  multi_iter<vlen, T, cmplx<T>> it(in, out, axis);
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2390,15 +2394,14 @@ template<typename T> NOINLINE void general_c2r(
   size_t nthreads=1)
   {
   pocketfft_r<T> plan(out.shape(axis));
-  constexpr int vlen = VTYPE<T>::vlen;
+  constexpr auto vlen = VTYPE<T>::vlen;
   size_t len=out.shape(axis);
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if(util::run_parallel(in.shape(), axis)) num_threads(nthreads)
+#pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axis))
 #endif
 {
   auto storage = alloc_tmp<T>(out.shape(), len, sizeof(T));
-  multi_iter<vlen, cmplx<T>, T> it(in, out, axis,
-    util::nthreads(), util::thread_num());
+  multi_iter<vlen, cmplx<T>, T> it(in, out, axis);
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2446,16 +2449,15 @@ template<typename T> NOINLINE void general_r(
   const ndarr<T> &in, ndarr<T> &out, size_t axis, bool forward, T fct,
   size_t nthreads=1)
   {
-  constexpr int vlen = VTYPE<T>::vlen;
+  constexpr auto vlen = VTYPE<T>::vlen;
   size_t len=in.shape(axis);
   pocketfft_r<T> plan(len);
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel if(util::run_parallel(in.shape(), axis)) num_threads(nthreads)
+#pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axis))
 #endif
 {
   auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-  multi_iter<vlen, T, T> it(in, out, axis,
-    util::nthreads(), util::thread_num());
+  multi_iter<vlen, T, T> it(in, out, axis);
 #if defined(HAVE_VECSUPPORT)
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2544,7 +2546,7 @@ template<typename T> void r2c(const shape_t &shape_in,
   shape_out[axes.back()] = shape_in[axes.back()]/2 + 1;
   auto newaxes = shape_t{axes.begin(), --axes.end()};
   c2c(shape_out, stride_out, stride_out, newaxes, true, data_out, data_out,
-    T(1));
+    T(1), nthreads);
   }
 
 template<typename T> void c2r(const shape_t &shape_out,
