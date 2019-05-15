@@ -464,14 +464,14 @@ struct util // hack to avoid duplicate symbols
     }
 
 #ifdef POCKETFFT_OPENMP
-    static size_t nthreads() { return omp_get_num_threads(); }
-    static size_t thread_num() { return omp_get_thread_num(); }
+    static size_t nthreads() { return size_t(omp_get_num_threads()); }
+    static size_t thread_num() { return size_t(omp_get_thread_num()); }
     static size_t thread_count (size_t nthreads, const shape_t &shape,
       size_t axis)
       {
       if (nthreads==1) return 1;
       if (prod(shape)/shape[axis] < 20) return 1;
-      return (nthreads==0) ? omp_get_max_threads() : nthreads;
+      return (nthreads==0) ? size_t(omp_get_max_threads()) : nthreads;
       }
 #else
     static size_t nthreads() { return 1; }
@@ -2025,7 +2025,8 @@ template<typename T0> class pocketfft_r
       : len(length)
       {
       if (length==0) throw runtime_error("zero-length FFT requested");
-      if ((length<50) || (util::largest_prime_factor(length)<=sqrt(length)))
+      if ((length<50)
+          || (double(util::largest_prime_factor(length))<=sqrt(double(length))))
         {
         packplan=unique_ptr<rfftp<T0>>(new rfftp<T0>(length));
         return;
@@ -2578,8 +2579,8 @@ template<typename T> void c2r(const shape_t &shape_out,
   auto nval = util::prod(shape_in);
   stride_t stride_inter(shape_in.size());
   stride_inter.back() = sizeof(cmplx<T>);
-  for (int i=shape_in.size()-2; i>=0; --i)
-    stride_inter[i] = stride_inter[i+1]*shape_in[i+1];
+  for (int i=int(shape_in.size())-2; i>=0; --i)
+    stride_inter[size_t(i)] = stride_inter[size_t(i+1)]*ptrdiff_t(shape_in[size_t(i+1)]);
   arr<complex<T>> tmp(nval);
   auto newaxes = shape_t({axes.begin(), --axes.end()});
   c2c(shape_in, stride_in, stride_inter, newaxes, false, data_in, tmp.data(),
