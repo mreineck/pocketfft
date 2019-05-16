@@ -66,15 +66,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace pocketfft {
 
-using shape_t = std::vector<size_t>;
-using stride_t = std::vector<ptrdiff_t>;
-
-constexpr bool FORWARD  = true,
-               BACKWARD = false;
-
 namespace detail {
 
 using namespace std;
+
+using shape_t = vector<size_t>;
+using stride_t = vector<ptrdiff_t>;
+
+constexpr bool FORWARD  = true,
+               BACKWARD = false;
 
 #ifndef POCKETFFT_NO_VECTORS
 #if (defined(__AVX512F__))
@@ -2503,14 +2503,11 @@ template<typename T> NOINLINE void general_r(
 
 #undef HAVE_VECSUPPORT
 
-} // namespace detail
-
 template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
-  const std::complex<T> *data_in, std::complex<T> *data_out, T fct,
+  const complex<T> *data_in, complex<T> *data_out, T fct,
   size_t nthreads=1)
   {
-  using namespace detail;
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<cmplx<T>> ain(data_in, shape, stride_in),
@@ -2520,9 +2517,8 @@ template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
+  const T *data_in, complex<T> *data_out, T fct, size_t nthreads=1)
   {
-  using namespace detail;
   if (util::prod(shape_in)==0) return;
   util::sanity_check(shape_in, stride_in, stride_out, false, axis);
   ndarr<T> ain(data_in, shape_in, stride_in);
@@ -2534,9 +2530,8 @@ template<typename T> void r2c(const shape_t &shape_in,
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
+  const T *data_in, complex<T> *data_out, T fct, size_t nthreads=1)
   {
-  using namespace detail;
   if (util::prod(shape_in)==0) return;
   util::sanity_check(shape_in, stride_in, stride_out, false, axes);
   r2c(shape_in, stride_in, stride_out, axes.back(), data_in, data_out, fct,
@@ -2552,9 +2547,8 @@ template<typename T> void r2c(const shape_t &shape_in,
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const std::complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
+  const complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
   {
-  using namespace detail;
   if (util::prod(shape_out)==0) return;
   util::sanity_check(shape_out, stride_in, stride_out, false, axis);
   shape_t shape_in(shape_out);
@@ -2566,9 +2560,8 @@ template<typename T> void c2r(const shape_t &shape_out,
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const std::complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
+  const complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
   {
-  using namespace detail;
   if (util::prod(shape_out)==0) return;
   if (axes.size()==1)
     return c2r(shape_out, stride_in, stride_out, axes[0], data_in, data_out,
@@ -2593,7 +2586,6 @@ template<typename T> void r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
   bool forward, const T *data_in, T *data_out, T fct, size_t nthreads=1)
   {
-  using namespace detail;
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axis);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
@@ -2604,12 +2596,23 @@ template<typename T> void r2r_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const T *data_in, T *data_out, T fct, size_t nthreads=1)
   {
-  using namespace detail;
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
   general_hartley(ain, aout, axes, fct, nthreads);
   }
+
+} // namespace detail
+
+using detail::FORWARD;
+using detail::BACKWARD;
+using detail::shape_t;
+using detail::stride_t;
+using detail::c2c;
+using detail::c2r;
+using detail::r2c;
+using detail::r2r_fftpack;
+using detail::r2r_hartley;
 
 } // namespace pocketfft
 
