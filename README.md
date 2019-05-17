@@ -17,6 +17,7 @@ advantages:
 - Makes use of CPU vector instructions when performing 2D and higher-dimensional
   transforms, if they are available.
 - Does not have persistent transform plans, which makes the interface simpler.
+- Has optional OpenMP support for multidimensional transforms
 
 
 License
@@ -64,6 +65,8 @@ is performed, where `n2` is chosen to be highly composite.
 Programming interface
 =====================
 
+All symbols are encapsulated in the namespace `pocketfft`.
+
 Arguments
 ---------
  - `shape[_*]` contains the number of array entries along each axis.
@@ -79,12 +82,19 @@ Arguments
  - `forward` describes the direction of a transform. Generally a forward
    transform has a minus sign in the complex exponent, while the backward
    transform has a positive one. Instead if `true`/`false`, the symbolic
-   constants `POCKETFFT_FORWARD`/`POCKETFFT_BACKWARD` can be used.
+   constants `FORWARD`/`BACKWARD` can be used.
  - `fct` is a floating-point value which is used to scale the result of a
    transform. `pocketfft`'s transforms are not normalized, so if normalization
    is required, an appropriate scaling factor has to be specified.
  - `data_in` and `data_out` are pointers to the first element of the input
    and output data arrays.
+ - `nthreads` is a nonnegative integer specifying the number of threads to use
+   for the operation. A value of 0 means that the default number of threads
+   (typically governed by the environment variable `OMP_NUM_THREADS` will be
+   used.
+   This value is only a recommendation. If `pocketfft` is compiled without
+   OpenMP support, it will be silently ignored. For one-dimensional transforms,
+   multi-threading is disabled as well.
 
 General constraints on arguments
 --------------------------------
@@ -112,18 +122,19 @@ constexpr bool FORWARD  = true,
 
 template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
-  const std::complex<T> *data_in, std::complex<T> *data_out, T fct);
+  const std::complex<T> *data_in, std::complex<T> *data_out, T fct,
+  size_t nthreads=1);
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const T *data_in, std::complex<T> *data_out, T fct)
+  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
 
 /* This function first carries out an r2c transform along the last axis in axes,
    storing the result in data_out. Then, an in-place c2c transform
    is carried out in data_out along all other axes. */
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const T *data_in, std::complex<T> *data_out, T fct)
+  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
@@ -134,13 +145,13 @@ template<typename T> void c2r(const shape_t &shape_out,
    is carried out along the last axis, storing the result in data_out. */
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const std::complex<T> *data_in, T *data_out, T fct)
+  const std::complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
 
 template<typename T> void r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  bool forward, const T *data_in, T *data_out, T fct);
+  bool forward, const T *data_in, T *data_out, T fct, size_t nthreads=1);
 
 template<typename T> void r2r_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const T *data_in, T *data_out, T fct);
+  const T *data_in, T *data_out, T fct, size_t nthreads=1);
 ```
