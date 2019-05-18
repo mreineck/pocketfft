@@ -56,9 +56,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 
-#ifdef __GNUC__
+#if defined(__GNUC__)
 #define NOINLINE __attribute__((noinline))
 #define restrict __restrict__
+#elif defined(_MSC_VER)
+#define NOINLINE __declspec(noinline)
+#define restrict __restrict
 #else
 #define NOINLINE
 #define restrict
@@ -97,29 +100,48 @@ template<typename T> class arr
     T *p;
     size_t sz;
 
+#if defined(POCKETFFT_NO_VECTORS)
     static T *ralloc(size_t num)
       {
       if (num==0) return nullptr;
-#ifdef POCKETFFT_NO_VECTORS
       void *res = malloc(num*sizeof(T));
       if (!res) throw bad_alloc();
-#else
-#if __cplusplus >= 201703L
-      void *res = aligned_alloc(64,num*sizeof(T));
-      if (!res) throw bad_alloc();
-#elif defined(_WIN32)
-      void *res = _aligned_malloc(num*sizeof(T), 64);
-      if (!res) throw bad_alloc();
-#else
-      void *res(nullptr);
-      if (posix_memalign(&res, 64, num*sizeof(T))!=0)
-        throw bad_alloc();
-#endif
-#endif
       return reinterpret_cast<T *>(res);
       }
     static void dealloc(T *ptr)
       { free(ptr); }
+#elif __cplusplus >= 201703L
+    static T *ralloc(size_t num)
+      {
+      if (num==0) return nullptr;
+      void *res = aligned_alloc(64,num*sizeof(T));
+      if (!res) throw bad_alloc();
+      return reinterpret_cast<T *>(res);
+      }
+    static void dealloc(T *ptr)
+      { free(ptr); }
+#elif defined(_WIN32)
+    static T *ralloc(size_t num)
+      {
+      if (num==0) return nullptr;
+      void *res = _aligned_malloc(num*sizeof(T), 64);
+      if (!res) throw bad_alloc();
+      return reinterpret_cast<T *>(res);
+      }
+    static void dealloc(T *ptr)
+      { _aligned_free(ptr); }
+#else
+    static T *ralloc(size_t num)
+      {
+      if (num==0) return nullptr;
+      void *res(nullptr);
+      if (posix_memalign(&res, 64, num*sizeof(T))!=0)
+        throw bad_alloc();
+      return reinterpret_cast<T *>(res);
+      }
+    static void dealloc(T *ptr)
+      { free(ptr); }
+#endif
 
   public:
     arr() : p(0), sz(0) {}
