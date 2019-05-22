@@ -89,6 +89,9 @@ constexpr int VBYTELEN=32;
 #elif (defined(__SSE2__))
 #define HAVE_VECSUPPORT
 constexpr int VBYTELEN=16;
+#elif (defined(__VSX__))
+#define HAVE_VECSUPPORT
+constexpr int VBYTELEN=16;
 #else
 #define POCKETFFT_NO_VECTORS
 #endif
@@ -191,8 +194,9 @@ template<typename T> struct cmplx {
   template<bool bwd, typename T2> auto special_mul (const cmplx<T2> &other) const
     -> cmplx<decltype(r+other.r)>
     {
-    return bwd ? cmplx(r*other.r-i*other.i, r*other.i + i*other.r)
-               : cmplx(r*other.r+i*other.i, i*other.r - r*other.i);
+    using Tres = cmplx<decltype(r+other.r)>;
+    return bwd ? Tres(r*other.r-i*other.i, r*other.i + i*other.r)
+               : Tres(r*other.r+i*other.i, i*other.r - r*other.i);
     }
 };
 template<typename T> void PMC(cmplx<T> &a, cmplx<T> &b,
@@ -203,8 +207,8 @@ template<typename T> cmplx<T> conj(const cmplx<T> &a)
 
 template<typename T> void ROT90(cmplx<T> &a)
   { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
-template<typename T> void ROTM90(cmplx<T> &a)
-  { auto tmp_=-a.r; a.r=a.i; a.i=tmp_; }
+template<bool bwd, typename T> void ROTX90(cmplx<T> &a)
+  { auto tmp_= bwd ? a.r : -a.r; a.r = bwd ? -a.i : a.i; a.i=tmp_; }
 
 //
 // twiddle factor section
@@ -223,19 +227,19 @@ template<typename T> class sincos_2pibyn
     using Thigh = typename TypeSelector<T, double, (sizeof(T)>sizeof(double))>::type;
     arr<T> data;
 
-    // adapted from https://stackoverflow.com/questions/42792939/
-    // CAUTION: this function only works for arguments in the range
-    //          [-0.25; 0.25]!
     void my_sincosm1pi (Thigh a_, Thigh *restrict res)
       {
       if (sizeof(Thigh)>sizeof(double)) // don't have the code for long double
         {
-        Thigh pi = Thigh(3.141592653589793238462643383279502884197L);
-        res[1] = sin(pi*a_);
-        auto s = res[1];
+        constexpr Thigh pi = Thigh(3.141592653589793238462643383279502884197L);
+        auto s = sin(pi*a_);
+        res[1] = s;
         res[0] = (s*s)/(-sqrt((1-s)*(1+s))-1);
         return;
         }
+      // adapted from https://stackoverflow.com/questions/42792939/
+      // CAUTION: this function only works for arguments in the range
+      //          [-0.25; 0.25]!
       double a = double(a_);
       double s = a * a;
       /* Approximate cos(pi*x)-1 for x in [-0.25,0.25] */
@@ -612,7 +616,7 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
       T t1, t2, t3, t4;
       PMC(t2,t1,CC(0,0,k),CC(0,2,k));
       PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      bwd ? ROT90(t4) : ROTM90(t4);
+      ROTX90<bwd>(t4);
       PMC(CH(0,k,0),CH(0,k,2),t2,t3);
       PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
@@ -623,7 +627,7 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
       T t1, t2, t3, t4;
       PMC(t2,t1,CC(0,0,k),CC(0,2,k));
       PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      bwd ? ROT90(t4) : ROTM90(t4);
+      ROTX90<bwd>(t4);
       PMC(CH(0,k,0),CH(0,k,2),t2,t3);
       PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
@@ -633,7 +637,7 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
         T cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
         PMC(t2,t1,cc0,cc2);
         PMC(t3,t4,cc1,cc3);
-        bwd ? ROT90(t4) : ROTM90(t4);
+        ROTX90<bwd>(t4);
         cmplx<T0> wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
         PMC(CH(i,k,0),c3,t2,t3);
         PMC(c2,c4,t1,t4);
@@ -778,6 +782,107 @@ template<bool bwd, typename T> void pass7(size_t ido, size_t l1,
 #undef PARTSTEP7a0
 #undef PARTSTEP7a
 #undef PREP7
+
+template <bool bwd, typename T> void ROTX45(T &a)
+  {
+  constexpr T0 hsqt2=T0(0.707106781186547524400844362104849L);
+  if (bwd)
+    { auto tmp_=a.r; a.r=hsqt2*(a.r-a.i); a.i=hsqt2*(a.i+tmp_); }
+  else
+    { auto tmp_=a.r; a.r=hsqt2*(a.r+a.i); a.i=hsqt2*(a.i-tmp_); }
+  }
+template <bool bwd, typename T> void ROTX135(T &a)
+  {
+  constexpr T0 hsqt2=T0(0.707106781186547524400844362104849L);
+  if (bwd)
+    { auto tmp_=a.r; a.r=hsqt2*(-a.r-a.i); a.i=hsqt2*(tmp_-a.i); }
+  else
+    { auto tmp_=a.r; a.r=hsqt2*(a.i-a.r); a.i=hsqt2*(-tmp_-a.i); }
+  }
+template<typename T> inline void PMINPLACE(T &a, T &b)
+  { T t = a; a.r+=b.r; a.i+=b.i; b.r=t.r-b.r; b.i=t.i-b.i; }
+
+template<bool bwd, typename T> void pass8 (size_t ido, size_t l1,
+  const T * restrict cc, T * restrict ch, const cmplx<T0> * restrict wa)
+  {
+  constexpr size_t cdim=8;
+
+  if (ido==1)
+    for (size_t k=0; k<l1; ++k)
+      {
+      T a0, a1, a2, a3, a4, a5, a6, a7;
+      PMC(a0,a4,CC(0,0,k),CC(0,4,k));
+      PMC(a1,a5,CC(0,1,k),CC(0,5,k));
+      PMC(a2,a6,CC(0,2,k),CC(0,6,k));
+      PMC(a3,a7,CC(0,3,k),CC(0,7,k));
+      ROTX90<bwd>(a6);
+      ROTX90<bwd>(a7);
+      PMINPLACE(a0,a2);
+      PMINPLACE(a1,a3);
+      PMINPLACE(a4,a6);
+      PMINPLACE(a5,a7);
+      ROTX45<bwd>(a5);
+      ROTX90<bwd>(a3);
+      ROTX135<bwd>(a7);
+      PMC(CH(0,k,0),CH(0,k,4),a0,a1);
+      PMC(CH(0,k,1),CH(0,k,5),a4,a5);
+      PMC(CH(0,k,2),CH(0,k,6),a2,a3);
+      PMC(CH(0,k,3),CH(0,k,7),a6,a7);
+      }
+  else
+    for (size_t k=0; k<l1; ++k)
+      {
+      T a0, a1, a2, a3, a4, a5, a6, a7;
+      PMC(a0,a4,CC(0,0,k),CC(0,4,k));
+      PMC(a1,a5,CC(0,1,k),CC(0,5,k));
+      PMC(a2,a6,CC(0,2,k),CC(0,6,k));
+      PMC(a3,a7,CC(0,3,k),CC(0,7,k));
+      ROTX90<bwd>(a6);
+      ROTX90<bwd>(a7);
+      PMINPLACE(a0,a2);
+      PMINPLACE(a1,a3);
+      PMINPLACE(a4,a6);
+      PMINPLACE(a5,a7);
+      ROTX45<bwd>(a5);
+      ROTX90<bwd>(a3);
+      ROTX135<bwd>(a7);
+      PMC(CH(0,k,0),CH(0,k,4),a0,a1);
+      PMC(CH(0,k,1),CH(0,k,5),a4,a5);
+      PMC(CH(0,k,2),CH(0,k,6),a2,a3);
+      PMC(CH(0,k,3),CH(0,k,7),a6,a7);
+
+      for (size_t i=1; i<ido; ++i)
+        {
+        T a0, a1, a2, a3, a4, a5, a6, a7;
+        PMC(a0,a4,CC(i,0,k),CC(i,4,k));
+        PMC(a1,a5,CC(i,1,k),CC(i,5,k));
+        PMC(a2,a6,CC(i,2,k),CC(i,6,k));
+        PMC(a3,a7,CC(i,3,k),CC(i,7,k));
+        ROTX90<bwd>(a6);
+        ROTX90<bwd>(a7);
+        PMINPLACE(a0,a2);
+        PMINPLACE(a1,a3);
+        PMINPLACE(a4,a6);
+        PMINPLACE(a5,a7);
+        ROTX45<bwd>(a5);
+        ROTX90<bwd>(a3);
+        ROTX135<bwd>(a7);
+        PMINPLACE(a0,a1);
+        PMINPLACE(a2,a3);
+        PMINPLACE(a4,a5);
+        PMINPLACE(a6,a7);
+        CH(i,k,0) = a0;
+        CH(i,k,1) = a4.template special_mul<bwd>(WA(0,i));
+        CH(i,k,2) = a2.template special_mul<bwd>(WA(1,i));
+        CH(i,k,3) = a6.template special_mul<bwd>(WA(2,i));
+        CH(i,k,4) = a1.template special_mul<bwd>(WA(3,i));
+        CH(i,k,5) = a5.template special_mul<bwd>(WA(4,i));
+        CH(i,k,6) = a3.template special_mul<bwd>(WA(5,i));
+        CH(i,k,7) = a7.template special_mul<bwd>(WA(6,i));
+        }
+      }
+   }
+
 
 #define PREP11(idx) \
         T t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7, t8, t9, t10, t11; \
@@ -979,6 +1084,8 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
     size_t ido = length/l2;
     if     (ip==4)
       pass4<bwd> (ido, l1, p1, p2, fact[k1].tw);
+    else if(ip==8)
+      pass8<bwd>(ido, l1, p1, p2, fact[k1].tw);
     else if(ip==2)
       pass2<bwd>(ido, l1, p1, p2, fact[k1].tw);
     else if(ip==3)
@@ -1026,6 +1133,8 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
     NOINLINE void factorize()
       {
       size_t len=length;
+      while ((len&7)==0)
+        { add_factor(8); len>>=3; }
       while ((len&3)==0)
         { add_factor(4); len>>=2; }
       if ((len&1)==0)
