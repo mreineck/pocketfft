@@ -79,18 +79,30 @@ using stride_t = vector<ptrdiff_t>;
 constexpr bool FORWARD  = true,
                BACKWARD = false;
 
+// only enable vector support for gcc>=5.0 and clang>=5.0
+#ifndef POCKETFFT_NO_VECTORS
+#define POCKETFFT_NO_VECTORS
+#if defined(__INTEL_COMPILER)
+// do nothing. This is necessary because this compiler also sets __GNUC__
+#elif defined(__clang__)
+#if __clang__>=5
+#undef POCKETFFT_NO_VECTORS
+#endif
+#elif defined(__GNUC__)
+#if __GNUC__>=5
+#undef POCKETFFT_NO_VECTORS
+#endif
+#endif
+#endif
+
 #ifndef POCKETFFT_NO_VECTORS
 #if (defined(__AVX512F__))
-#define HAVE_VECSUPPORT
 constexpr int VBYTELEN=64;
 #elif (defined(__AVX__))
-#define HAVE_VECSUPPORT
 constexpr int VBYTELEN=32;
 #elif (defined(__SSE2__))
-#define HAVE_VECSUPPORT
 constexpr int VBYTELEN=16;
 #elif (defined(__VSX__))
-#define HAVE_VECSUPPORT
 constexpr int VBYTELEN=16;
 #else
 #define POCKETFFT_NO_VECTORS
@@ -638,12 +650,11 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
         PMC(t2,t1,cc0,cc2);
         PMC(t3,t4,cc1,cc3);
         ROTX90<bwd>(t4);
-        cmplx<T0> wa0=WA(0,i), wa1=WA(1,i),wa2=WA(2,i);
         PMC(CH(i,k,0),c3,t2,t3);
         PMC(c2,c4,t1,t4);
-        CH(i,k,1) = c2.template special_mul<bwd>(wa0);
-        CH(i,k,2) = c3.template special_mul<bwd>(wa1);
-        CH(i,k,3) = c4.template special_mul<bwd>(wa2);
+        CH(i,k,1) = c2.template special_mul<bwd>(WA(0,i));
+        CH(i,k,2) = c3.template special_mul<bwd>(WA(1,i));
+        CH(i,k,3) = c4.template special_mul<bwd>(WA(2,i));
         }
       }
   }
@@ -1983,12 +1994,12 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
           fact[k].tws=ptr; ptr+=2*ip;
           fact[k].tws[0] = 1.;
           fact[k].tws[1] = 0.;
-          for (size_t i=1; i<=(ip>>1); ++i)
+          for (size_t i=2, ic=2*ip-2; i<=ic; i+=2, ic-=2)
             {
-            fact[k].tws[2*i  ] = twid[2*i*(length/ip)];
-            fact[k].tws[2*i+1] = twid[2*i*(length/ip)+1];
-            fact[k].tws[2*(ip-i)  ] = twid[2*i*(length/ip)];
-            fact[k].tws[2*(ip-i)+1] = -twid[2*i*(length/ip)+1];
+            fact[k].tws[i  ] = twid[i*(length/ip)];
+            fact[k].tws[i+1] = twid[i*(length/ip)+1];
+            fact[k].tws[ic]   = twid[i*(length/ip)];
+            fact[k].tws[ic+1] = -twid[i*(length/ip)+1];
             }
           }
         l1*=ip;
@@ -2301,7 +2312,7 @@ template<size_t N, typename Ti, typename To> class multi_iter
     bool contiguous_out() const { return str_o==sizeof(To); }
   };
 
-#if defined(HAVE_VECSUPPORT)
+#ifndef POCKETFFT_NO_VECTORS
 template<typename T> struct VTYPE {};
 template<> struct VTYPE<long double>
   {
@@ -2370,7 +2381,7 @@ template<typename T> NOINLINE void general_c(
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(cmplx<T>));
     multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax]);
-#if defined(HAVE_VECSUPPORT)
+#ifndef POCKETFFT_NO_VECTORS
     if (vlen>1)
       while (it.remaining()>=vlen)
         {
@@ -2433,7 +2444,7 @@ template<typename T> NOINLINE void general_hartley(
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
     multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax]);
-#if defined(HAVE_VECSUPPORT)
+#ifndef POCKETFFT_NO_VECTORS
     if (vlen>1)
       while (it.remaining()>=vlen)
         {
@@ -2491,7 +2502,7 @@ template<typename T> NOINLINE void general_r2c(
 {
   auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
   multi_iter<vlen, T, cmplx<T>> it(in, out, axis);
-#if defined(HAVE_VECSUPPORT)
+#ifndef POCKETFFT_NO_VECTORS
   if (vlen>1)
     while (it.remaining()>=vlen)
       {
@@ -2542,7 +2553,7 @@ template<typename T> NOINLINE void general_c2r(
 {
   auto storage = alloc_tmp<T>(out.shape(), len, sizeof(T));
   multi_iter<vlen, cmplx<T>, T> it(in, out, axis);
-#if defined(HAVE_VECSUPPORT)
+#ifndef POCKETFFT_NO_VECTORS
   if (vlen>1)
     while (it.remaining()>=vlen)
       {
@@ -2598,7 +2609,7 @@ template<typename T> NOINLINE void general_r(
 {
   auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
   multi_iter<vlen, T, T> it(in, out, axis);
-#if defined(HAVE_VECSUPPORT)
+#ifndef POCKETFFT_NO_VECTORS
   if (vlen>1)
     while (it.remaining()>=vlen)
       {
@@ -2641,7 +2652,6 @@ template<typename T> NOINLINE void general_r(
   }
 
 #undef POCKETFFT_NTHREADS
-#undef HAVE_VECSUPPORT
 
 template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
