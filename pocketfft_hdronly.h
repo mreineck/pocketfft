@@ -1161,16 +1161,11 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
         add_factor(2);
         swap(fact[0].fct, fact.back().fct);
         }
-      size_t maxl = size_t(sqrt(double(len)))+1;
-      for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
-        if ((len%divisor)==0)
+      for (size_t divisor=3; divisor*divisor<=len; divisor+=2)
+        while ((len%divisor)==0)
           {
-          while ((len%divisor)==0)
-            {
-            add_factor(divisor);
-            len/=divisor;
-            }
-          maxl=size_t(sqrt(double(len)))+1;
+          add_factor(divisor);
+          len/=divisor;
           }
       if (len>1) add_factor(len);
       }
@@ -1952,16 +1947,11 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
         add_factor(2);
         swap(fact[0].fct, fact.back().fct);
         }
-      size_t maxl = size_t(sqrt(double(len)))+1;
-      for (size_t divisor=3; (len>1)&&(divisor<maxl); divisor+=2)
-        if ((len%divisor)==0)
+      for (size_t divisor=3; divisor*divisor<=len; divisor+=2)
+        while ((len%divisor)==0)
           {
-          while ((len%divisor)==0)
-            {
-            add_factor(divisor);
-            len/=divisor;
-            }
-          maxl=size_t(sqrt(double(len)))+1;
+          add_factor(divisor);
+          len/=divisor;
           }
       if (len>1) add_factor(len);
       }
