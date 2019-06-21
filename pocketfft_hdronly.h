@@ -406,15 +406,10 @@ struct util // hack to avoid duplicate symbols
     size_t res=1;
     while ((n&1)==0)
       { res=2; n>>=1; }
-
     for (size_t x=3; x*x<=n; x+=2)
       while ((n%x)==0)
-        {
-        res=x;
-        n/=x;
-        }
+        { res=x; n/=x; }
     if (n>1) res=n;
-
     return res;
     }
 
@@ -425,17 +420,13 @@ struct util // hack to avoid duplicate symbols
     double result=0.;
     while ((n&1)==0)
       { result+=2; n>>=1; }
-
-    size_t limit=size_t(sqrt(double(n)+0.01));
-    for (size_t x=3; x<=limit; x+=2)
-    while ((n/x)*x==n)
-      {
-      result+= (x<=5) ? double(x) : lfp*double(x); // penalize larger prime factors
-      n/=x;
-      limit=size_t(sqrt(double(n)+0.01));
-      }
+    for (size_t x=3; x*x<=n; x+=2)
+      while ((n%x)==0)
+        {
+        result+= (x<=5) ? double(x) : lfp*double(x); // penalize larger prime factors
+        n/=x;
+        }
     if (n>1) result+=(n<=5) ? double(n) : lfp*double(n);
-
     return result*double(ni);
     }
 
@@ -2115,8 +2106,8 @@ template<typename T0> class pocketfft_c
       : len(length)
       {
       if (length==0) throw runtime_error("zero-length FFT requested");
-      if ((length<50) ||
-          (double(util::largest_prime_factor(length))<=sqrt(double(length))))
+      size_t tmp = (length<50) ? 0 : util::largest_prime_factor(length);
+      if (tmp*tmp <= length)
         {
         packplan=unique_ptr<cfftp<T0>>(new cfftp<T0>(length));
         return;
@@ -2155,8 +2146,8 @@ template<typename T0> class pocketfft_r
       : len(length)
       {
       if (length==0) throw runtime_error("zero-length FFT requested");
-      if ((length<50)
-          || (double(util::largest_prime_factor(length))<=sqrt(double(length))))
+      size_t tmp = (length<50) ? 0 : util::largest_prime_factor(length);
+      if (tmp*tmp <= length)
         {
         packplan=unique_ptr<rfftp<T0>>(new rfftp<T0>(length));
         return;
