@@ -16,7 +16,8 @@ advantages:
   array, FFTPACK-style half-complex format and Hartley transform).
 - Makes use of CPU vector instructions when performing 2D and higher-dimensional
   transforms, if they are available.
-- Does not have persistent transform plans, which makes the interface simpler.
+- Has a small internal cache for transform plans, which speeds up repeated
+  transforms of the same length (most significant for 1D transforms).
 - Has optional OpenMP support for multidimensional transforms
 
 
@@ -73,21 +74,34 @@ Arguments
    For `c2c` and `r2r` transforms, `shape` is identical for input and output
    arrays. For `r2c` transforms the shape of the input array must be specified,
    while for `c2r` transforms the shape of the *output* array must be given.
+
  - `stride_*` describes array strides, i.e. the memory distance (in bytes)
    between two neighboring array entries along an axis.
+
  - `axes` is a vector of nonnegative integers, describing the axes along
    which a transform is to be carried out. The order of axes usually does not
    matter, except for `r2c` and `c2r` transforms, where the last entry of
    `axes` is treated specially.
+
  - `forward` describes the direction of a transform. Generally a forward
    transform has a minus sign in the complex exponent, while the backward
    transform has a positive one. Instead if `true`/`false`, the symbolic
    constants `FORWARD`/`BACKWARD` can be used.
+   NOTE: Unlike many other libraries, pocketfft also allows a `forward` argument
+   in `r2c` and `c2r` transforms, instead of having hard-wired forward `r2c` and
+   backward `c2r` transforms. Calling `r2c` with `forward=false`, for
+   example, performs a transform from purely real data in the frequency domain
+   to Hermitian data in the position domain.
+   If you want the "traditional" behavior, call `r2c` with `forward=true` and
+   `c2r` with `forward=false`.
+
  - `fct` is a floating-point value which is used to scale the result of a
    transform. `pocketfft`'s transforms are not normalized, so if normalization
    is required, an appropriate scaling factor has to be specified.
+
  - `data_in` and `data_out` are pointers to the first element of the input
    and output data arrays.
+
  - `nthreads` is a nonnegative integer specifying the number of threads to use
    for the operation. A value of 0 means that the default number of threads
    (typically governed by the environment variable `OMP_NUM_THREADS` will be
@@ -122,36 +136,50 @@ constexpr bool FORWARD  = true,
 
 template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   const stride_t &stride_out, const shape_t &axes, bool forward,
-  const std::complex<T> *data_in, std::complex<T> *data_out, T fct,
-  size_t nthreads=1);
+  const complex<T> *data_in, complex<T> *data_out, T fct,
+  size_t nthreads=1)
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
+  bool forward, const T *data_in, complex<T> *data_out, T fct,
+  size_t nthreads=1)
 
 /* This function first carries out an r2c transform along the last axis in axes,
    storing the result in data_out. Then, an in-place c2c transform
    is carried out in data_out along all other axes. */
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const T *data_in, std::complex<T> *data_out, T fct, size_t nthreads=1)
+  bool forward, const T *data_in, complex<T> *data_out, T fct,
+  size_t nthreads=1)
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const std::complex<T> *data_in, T *data_out, T fct)
+  bool forward, const complex<T> *data_in, T *data_out, T fct,
+  size_t nthreads=1)
 
 /* This function first carries out a c2c transform along all axes except the
    last one, storing the result into a temporary array. Then, a c2r transform
    is carried out along the last axis, storing the result in data_out. */
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const std::complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
+  bool forward, const complex<T> *data_in, T *data_out, T fct,
+  size_t nthreads=1)
 
+/* This function carries out a FFTPACK-style real-to-halfcomplex or
+   halfcomplex-to-real transform (depending on the parameter `r2hc`) on all
+   specified axes in the given order.
+   NOTE: interpreting the result of this function can be complicated when
+   transforming more than one axis! */
 template<typename T> void r2r_fftpack(const shape_t &shape,
-  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  bool forward, const T *data_in, T *data_out, T fct, size_t nthreads=1);
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  bool r2hc, bool forward, const T *data_in, T *data_out, T fct,
+  size_t nthreads=1)
 
-template<typename T> void r2r_hartley(const shape_t &shape,
+/* For every requested axis, this function carries out a forward Fourier
+   transform, and the real and imaginary parts of the result are added before
+   the next axis is processed.
+   This is analogous to FFTW's implementation of the Hartley transform. */
+template<typename T> void r2r_separable_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const T *data_in, T *data_out, T fct, size_t nthreads=1);
 ```

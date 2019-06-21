@@ -34,11 +34,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define POCKETFFT_HDRONLY_H
 
 #ifndef __cplusplus
-#error This file is C++ and requires a C++ compiler
+#error This file is C++ and requires a C++ compiler.
 #endif
 
 #if !(__cplusplus >= 201103L || _MSVC_LANG+0L >= 201103L)
-#error This file requires at least C++11 support
+#error This file requires at least C++11 support.
 #endif
 
 #include <cmath>
@@ -48,9 +48,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <memory>
 #include <vector>
 #include <complex>
-#if defined(_WIN32)
-#include <malloc.h>
-#endif
+#include <mutex>
 #ifdef POCKETFFT_OPENMP
 #include <omp.h>
 #endif
@@ -83,7 +81,7 @@ constexpr bool FORWARD  = true,
 #ifndef POCKETFFT_NO_VECTORS
 #define POCKETFFT_NO_VECTORS
 #if defined(__INTEL_COMPILER)
-// do nothing. This is necessary because this compiler also sets __GNUC__
+// do nothing. This is necessary because this compiler also sets __GNUC__.
 #elif defined(__clang__)
 #if __clang__>=5
 #undef POCKETFFT_NO_VECTORS
@@ -141,27 +139,19 @@ template<typename T> class arr
       }
     static void dealloc(T *ptr)
       { free(ptr); }
-#elif defined(_WIN32)
+#else // portable emulation
     static T *ralloc(size_t num)
       {
       if (num==0) return nullptr;
-      void *res = _aligned_malloc(num*sizeof(T), 64);
-      if (!res) throw bad_alloc();
-      return reinterpret_cast<T *>(res);
+      void *ptr = malloc(num*sizeof(T)+64);
+      if (!ptr) throw bad_alloc();
+      T *res = reinterpret_cast<T *>
+        ((reinterpret_cast<size_t>(ptr) & ~(size_t(63))) + 64);
+      (reinterpret_cast<void**>(res))[-1] = ptr;
+      return res;
       }
     static void dealloc(T *ptr)
-      { _aligned_free(ptr); }
-#else
-    static T *ralloc(size_t num)
-      {
-      if (num==0) return nullptr;
-      void *res(nullptr);
-      if (posix_memalign(&res, 64, num*sizeof(T))!=0)
-        throw bad_alloc();
-      return reinterpret_cast<T *>(res);
-      }
-    static void dealloc(T *ptr)
-      { free(ptr); }
+      { if (ptr) free((reinterpret_cast<void**>(ptr))[-1]); }
 #endif
 
   public:
@@ -514,7 +504,7 @@ struct util // hack to avoid duplicate symbols
       size_t axis)
       {
       if (nthreads==1) return 1;
-      if (prod(shape)/shape[axis] < 20) return 1;
+      if (prod(shape) < 20*shape[axis]) return 1;
       return (nthreads==0) ? size_t(omp_get_max_threads()) : nthreads;
       }
 #else
@@ -2211,41 +2201,75 @@ template<typename T0> class pocketfft_r
 // multi-D infrastructure
 //
 
-template<typename T> class ndarr
+template<typename T> shared_ptr<T> get_plan(size_t length)
   {
-  private:
-    char *d;
-    const char *cd;
+  constexpr size_t nmax=10;
+  static vector<shared_ptr<T>> cache(nmax);
+  static size_t lastpos=0;
+  static mutex mut;
+  {
+  lock_guard<mutex> lock(mut);
+  for (size_t i=0; i<nmax; ++i)
+    if (cache[i] && (cache[i]->length()==length))
+      return cache[i];
+  }
+  auto plan = make_shared<T>(length);
+  {
+  lock_guard<mutex> lock(mut);
+  for (size_t i=0; i<nmax; ++i)
+    if (cache[i] && (cache[i]->length()==length))
+      return cache[i];
+  cache[lastpos] = plan;
+  if (++lastpos>=nmax) lastpos=0;
+  }
+  return plan;
+  }
+
+class arr_info
+  {
+  protected:
     shape_t shp;
     stride_t str;
 
   public:
-    ndarr(const void *data_, const shape_t &shape_, const stride_t &stride_)
-      : d(nullptr), cd(reinterpret_cast<const char *>(data_)), shp(shape_),
-        str(stride_) {}
-    ndarr(void *data_, const shape_t &shape_, const stride_t &stride_)
-      : d(reinterpret_cast<char *>(data_)),
-        cd(reinterpret_cast<const char *>(data_)), shp(shape_), str(stride_) {}
+    arr_info(const shape_t &shape_, const stride_t &stride_)
+      : shp(shape_), str(stride_) {}
     size_t ndim() const { return shp.size(); }
     size_t size() const { return util::prod(shp); }
     const shape_t &shape() const { return shp; }
     size_t shape(size_t i) const { return shp[i]; }
     const stride_t &stride() const { return str; }
     const ptrdiff_t &stride(size_t i) const { return str[i]; }
-    T &operator[](ptrdiff_t ofs)
-      { return *reinterpret_cast<T *>(d+ofs); }
-    const T &operator[](ptrdiff_t ofs) const
-      { return *reinterpret_cast<const T *>(cd+ofs); }
   };
 
-template<size_t N, typename Ti, typename To> class multi_iter
+template<typename T> class cndarr: public arr_info
+  {
+  protected:
+    const char *d;
+
+  public:
+    cndarr(const void *data_, const shape_t &shape_, const stride_t &stride_)
+      : arr_info(shape_, stride_),
+        d(reinterpret_cast<const char *>(data_)) {}
+    const T &operator[](ptrdiff_t ofs) const
+      { return *reinterpret_cast<const T *>(d+ofs); }
+  };
+
+template<typename T> class ndarr: public cndarr<T>
   {
   public:
-    shape_t pos;
-    const ndarr<Ti> &iarr;
-    ndarr<To> &oarr;
+    ndarr(void *data_, const shape_t &shape_, const stride_t &stride_)
+      : cndarr<T>::cndarr(const_cast<const void *>(data_), shape_, stride_)
+      {}
+    T &operator[](ptrdiff_t ofs)
+      { return *reinterpret_cast<T *>(const_cast<char *>(cndarr<T>::d+ofs)); }
+  };
 
+template<size_t N> class multi_iter
+  {
   private:
+    shape_t pos;
+    const arr_info &iarr, &oarr;
     ptrdiff_t p_ii, p_i[N], str_i, p_oi, p_o[N], str_o;
     size_t idim, rem;
 
@@ -2266,7 +2290,7 @@ template<size_t N, typename Ti, typename To> class multi_iter
       }
 
   public:
-    multi_iter(const ndarr<Ti> &iarr_, ndarr<To> &oarr_, size_t idim_)
+    multi_iter(const arr_info &iarr_, const arr_info &oarr_, size_t idim_)
       : pos(iarr_.ndim(), 0), iarr(iarr_), oarr(oarr_), p_ii(0),
         str_i(iarr.stride(idim_)), p_oi(0), str_o(oarr.stride(idim_)),
         idim(idim_), rem(iarr.size()/iarr.shape(idim))
@@ -2306,18 +2330,106 @@ template<size_t N, typename Ti, typename To> class multi_iter
         }
       rem -= n;
       }
-    const Ti &in (size_t i) const { return iarr[p_i[0] + ptrdiff_t(i)*str_i]; }
-    const Ti &in (size_t j, size_t i) const { return iarr[p_i[j] + ptrdiff_t(i)*str_i]; }
-    To &out (size_t i) { return oarr[p_o[0] + ptrdiff_t(i)*str_o]; }
-    To &out (size_t j, size_t i) { return oarr[p_o[j] + ptrdiff_t(i)*str_o]; }
+    ptrdiff_t iofs(size_t i) const { return p_i[0] + ptrdiff_t(i)*str_i; }
+    ptrdiff_t iofs(size_t j, size_t i) const { return p_i[j] + ptrdiff_t(i)*str_i; }
+    ptrdiff_t oofs(size_t i) const { return p_o[0] + ptrdiff_t(i)*str_o; }
+    ptrdiff_t oofs(size_t j, size_t i) const { return p_o[j] + ptrdiff_t(i)*str_o; }
     size_t length_in() const { return iarr.shape(idim); }
     size_t length_out() const { return oarr.shape(idim); }
     ptrdiff_t stride_in() const { return str_i; }
     ptrdiff_t stride_out() const { return str_o; }
     size_t remaining() const { return rem; }
-    bool inplace() const { return &iarr[0]==&oarr[0]; }
-    bool contiguous_in() const { return str_i==sizeof(Ti); }
-    bool contiguous_out() const { return str_o==sizeof(To); }
+  };
+
+class simple_iter
+  {
+  private:
+    shape_t pos;
+    const arr_info &arr;
+    ptrdiff_t p;
+    size_t rem;
+
+  public:
+    simple_iter(const arr_info &arr_)
+      : pos(arr_.ndim(), 0), arr(arr_), p(0), rem(arr_.size()) {}
+    void advance()
+      {
+      --rem;
+      for (int i_=int(pos.size())-1; i_>=0; --i_)
+        {
+        auto i = size_t(i_);
+        p += arr.stride(i);
+        if (++pos[i] < arr.shape(i))
+          return;
+        pos[i] = 0;
+        p -= ptrdiff_t(arr.shape(i))*arr.stride(i);
+        }
+      }
+    ptrdiff_t ofs() const { return p; }
+    size_t remaining() const { return rem; }
+  };
+
+class rev_iter
+  {
+  private:
+    shape_t pos;
+    const arr_info &arr;
+    vector<char> rev_axis;
+    vector<char> rev_jump;
+    size_t last_axis, last_size;
+    shape_t shp;
+    ptrdiff_t p, rp;
+    size_t rem;
+
+  public:
+    rev_iter(const arr_info &arr_, const shape_t &axes)
+      : pos(arr_.ndim(), 0), arr(arr_), rev_axis(arr_.ndim(), 0),
+        rev_jump(arr_.ndim(), 1), p(0), rp(0)
+      {
+      for (auto ax: axes)
+        rev_axis[ax]=1;
+      last_axis = axes.back();
+      last_size = arr.shape(last_axis)/2 + 1;
+      shp = arr.shape();
+      shp[last_axis] = last_size;
+      rem=1;
+      for (auto i: shp)
+        rem *= i;
+      }
+    void advance()
+      {
+      --rem;
+      for (int i_=int(pos.size())-1; i_>=0; --i_)
+        {
+        auto i = size_t(i_);
+        p += arr.stride(i);
+        if (!rev_axis[i])
+          rp += arr.stride(i);
+        else
+          {
+          rp -= arr.stride(i);
+          if (rev_jump[i])
+            {
+            rp += ptrdiff_t(arr.shape(i))*arr.stride(i);
+            rev_jump[i] = 0;
+            }
+          }
+        if (++pos[i] < shp[i])
+          return;
+        pos[i] = 0;
+        p -= ptrdiff_t(shp[i])*arr.stride(i);
+        if (rev_axis[i])
+          {
+          rp -= ptrdiff_t(arr.shape(i)-shp[i])*arr.stride(i);
+          rev_jump[i] = 1;
+          }
+        else
+          rp -= ptrdiff_t(shp[i])*arr.stride(i);
+        }
+      }
+    ptrdiff_t ofs() const { return p; }
+    ptrdiff_t rev_ofs() const { return rp; }
+    size_t remaining() const { return rem; }
   };
 
 #ifndef POCKETFFT_NO_VECTORS
@@ -2365,24 +2477,25 @@ template<typename T> arr<char> alloc_tmp(const shape_t &shape,
 #endif
 
 template<typename T> NOINLINE void general_c(
-  const ndarr<cmplx<T>> &in, ndarr<cmplx<T>> &out,
+  const cndarr<cmplx<T>> &in, ndarr<cmplx<T>> &out,
   const shape_t &axes, bool forward, T fct, size_t POCKETFFT_NTHREADS)
   {
-  unique_ptr<pocketfft_c<T>> plan;
+  shared_ptr<pocketfft_c<T>> plan;
 
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
     constexpr auto vlen = VLEN<T>::val;
     size_t len=in.shape(axes[iax]);
     if ((!plan) || (len!=plan->length()))
-      plan.reset(new pocketfft_c<T>(len));
+      plan = get_plan<pocketfft_c<T>>(len);
 
 #ifdef POCKETFFT_OPENMP
 #pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axes[iax]))
 #endif
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(cmplx<T>));
-    multi_iter<vlen, cmplx<T>, cmplx<T>> it(iax==0? in : out, out, axes[iax]);
+    const auto &tin(iax==0? in : out);
+    multi_iter<vlen> it(tin, out, axes[iax]);
 #ifndef POCKETFFT_NO_VECTORS
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2392,34 +2505,37 @@ template<typename T> NOINLINE void general_c(
         auto tdatav = reinterpret_cast<cmplx<vtype> *>(storage.data());
         for (size_t i=0; i<len; ++i)
           for (size_t j=0; j<vlen; ++j)
-            { tdatav[i].r[j] = it.in(j,i).r; tdatav[i].i[j] = it.in(j,i).i; }
+            {
+            tdatav[i].r[j] = tin[it.iofs(j,i)].r;
+            tdatav[i].i[j] = tin[it.iofs(j,i)].i;
+            }
         forward ? plan->forward (tdatav, fct) : plan->backward(tdatav, fct);
         for (size_t i=0; i<len; ++i)
           for (size_t j=0; j<vlen; ++j)
-            it.out(j,i).Set(tdatav[i].r[j],tdatav[i].i[j]);
+            out[it.oofs(j,i)].Set(tdatav[i].r[j],tdatav[i].i[j]);
         }
 #endif
     while (it.remaining()>0)
       {
       it.advance(1);
       auto tdata = reinterpret_cast<cmplx<T> *>(storage.data());
-      if (it.inplace() && it.contiguous_out()) // fully in-place
-        forward ? plan->forward ((&it.out(0)), fct)
-                : plan->backward((&it.out(0)), fct);
-      else if (it.contiguous_out()) // compute FFT in output location
+      if ((&tin[0]==&out[0]) && (it.stride_out()==sizeof(cmplx<T>))) // fully in-place
+        forward ? plan->forward (&out[it.oofs(0)], fct)
+                : plan->backward(&out[it.oofs(0)], fct);
+      else if (it.stride_out()==sizeof(cmplx<T>)) // compute FFT in output location
         {
         for (size_t i=0; i<len; ++i)
-          it.out(i) = it.in(i);
-        forward ? plan->forward ((&it.out(0)), fct)
-                : plan->backward((&it.out(0)), fct);
+          out[it.oofs(i)] = tin[it.iofs(i)];
+        forward ? plan->forward (&out[it.oofs(0)], fct)
+                : plan->backward(&out[it.oofs(0)], fct);
         }
       else
         {
         for (size_t i=0; i<len; ++i)
-          tdata[i] = it.in(i);
+          tdata[i] = tin[it.iofs(i)];
         forward ? plan->forward (tdata, fct) : plan->backward(tdata, fct);
         for (size_t i=0; i<len; ++i)
-          it.out(i) = tdata[i];
+          out[it.oofs(i)] = tdata[i];
         }
       }
 } // end of parallel region
@@ -2428,24 +2544,25 @@ template<typename T> NOINLINE void general_c(
   }
 
 template<typename T> NOINLINE void general_hartley(
-  const ndarr<T> &in, ndarr<T> &out, const shape_t &axes, T fct,
+  const cndarr<T> &in, ndarr<T> &out, const shape_t &axes, T fct,
   size_t POCKETFFT_NTHREADS)
   {
-  unique_ptr<pocketfft_r<T>> plan;
+  shared_ptr<pocketfft_r<T>> plan;
 
   for (size_t iax=0; iax<axes.size(); ++iax)
     {
     constexpr auto vlen = VLEN<T>::val;
     size_t len=in.shape(axes[iax]);
     if ((!plan) || (len!=plan->length()))
-      plan.reset(new pocketfft_r<T>(len));
+      plan = get_plan<pocketfft_r<T>>(len);
 
 #ifdef POCKETFFT_OPENMP
 #pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axes[iax]))
 #endif
 {
     auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-    multi_iter<vlen, T, T> it(iax==0 ? in : out, out, axes[iax]);
+    const auto &tin(iax==0 ? in : out);
+    multi_iter<vlen> it(tin, out, axes[iax]);
 #ifndef POCKETFFT_NO_VECTORS
     if (vlen>1)
       while (it.remaining()>=vlen)
@@ -2455,20 +2572,20 @@ template<typename T> NOINLINE void general_hartley(
         auto tdatav = reinterpret_cast<vtype *>(storage.data());
         for (size_t i=0; i<len; ++i)
           for (size_t j=0; j<vlen; ++j)
-            tdatav[i][j] = it.in(j,i);
+            tdatav[i][j] = tin[it.iofs(j,i)];
         plan->forward(tdatav, fct);
         for (size_t j=0; j<vlen; ++j)
-          it.out(j,0) = tdatav[0][j];
+          out[it.oofs(j,0)] = tdatav[0][j];
         size_t i=1, i1=1, i2=len-1;
         for (i=1; i<len-1; i+=2, ++i1, --i2)
           for (size_t j=0; j<vlen; ++j)
             {
-            it.out(j,i1) = tdatav[i][j]+tdatav[i+1][j];
-            it.out(j,i2) = tdatav[i][j]-tdatav[i+1][j];
+            out[it.oofs(j,i1)] = tdatav[i][j]+tdatav[i+1][j];
+            out[it.oofs(j,i2)] = tdatav[i][j]-tdatav[i+1][j];
             }
         if (i<len)
           for (size_t j=0; j<vlen; ++j)
-            it.out(j,i1) = tdatav[i][j];
+            out[it.oofs(j,i1)] = tdatav[i][j];
         }
 #endif
     while (it.remaining()>0)
@@ -2476,15 +2593,18 @@ template<typename T> NOINLINE void general_hartley(
       it.advance(1);
       auto tdata = reinterpret_cast<T *>(storage.data());
       for (size_t i=0; i<len; ++i)
-        tdata[i] = it.in(i);
+        tdata[i] = tin[it.iofs(i)];
       plan->forward(tdata, fct);
       // Hartley order
-      it.out(0) = tdata[0];
+      out[it.oofs(0)] = tdata[0];
       size_t i=1, i1=1, i2=len-1;
       for (i=1; i<len-1; i+=2, ++i1, --i2)
-        { it.out(i1) = tdata[i]+tdata[i+1]; it.out(i2) = tdata[i]-tdata[i+1]; }
+        {
+        out[it.oofs(i1)] = tdata[i]+tdata[i+1];
+        out[it.oofs(i2)] = tdata[i]-tdata[i+1];
+        }
       if (i<len)
-        it.out(i1) = tdata[i];
+        out[it.oofs(i1)] = tdata[i];
       }
 } // end of parallel region
     fct = T(1); // factor has been applied, use 1 for remaining axes
@@ -2492,10 +2612,10 @@ template<typename T> NOINLINE void general_hartley(
   }
 
 template<typename T> NOINLINE void general_r2c(
-  const ndarr<T> &in, ndarr<cmplx<T>> &out, size_t axis, T fct,
+  const cndarr<T> &in, ndarr<cmplx<T>> &out, size_t axis, bool forward, T fct,
   size_t POCKETFFT_NTHREADS)
   {
-  pocketfft_r<T> plan(in.shape(axis));
+  auto plan = get_plan<pocketfft_r<T>>(in.shape(axis));
   constexpr auto vlen = VLEN<T>::val;
   size_t len=in.shape(axis);
 #ifdef POCKETFFT_OPENMP
@@ -2503,7 +2623,7 @@ template<typename T> NOINLINE void general_r2c(
 #endif
 {
   auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-  multi_iter<vlen, T, cmplx<T>> it(in, out, axis);
+  multi_iter<vlen> it(in, out, axis);
 #ifndef POCKETFFT_NO_VECTORS
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2513,17 +2633,22 @@ template<typename T> NOINLINE void general_r2c(
       auto tdatav = reinterpret_cast<vtype *>(storage.data());
       for (size_t i=0; i<len; ++i)
         for (size_t j=0; j<vlen; ++j)
-          tdatav[i][j] = it.in(j,i);
-      plan.forward(tdatav, fct);
+          tdatav[i][j] = in[it.iofs(j,i)];
+      plan->forward(tdatav, fct);
       for (size_t j=0; j<vlen; ++j)
-        it.out(j,0).Set(tdatav[0][j]);
+        out[it.oofs(j,0)].Set(tdatav[0][j]);
       size_t i=1, ii=1;
-      for (; i<len-1; i+=2, ++ii)
-        for (size_t j=0; j<vlen; ++j)
-          it.out(j,ii).Set(tdatav[i][j], tdatav[i+1][j]);
+      if (forward)
+        for (; i<len-1; i+=2, ++ii)
+          for (size_t j=0; j<vlen; ++j)
+            out[it.oofs(j,ii)].Set(tdatav[i][j], tdatav[i+1][j]);
+      else
+        for (; i<len-1; i+=2, ++ii)
+          for (size_t j=0; j<vlen; ++j)
+            out[it.oofs(j,ii)].Set(tdatav[i][j], -tdatav[i+1][j]);
       if (i<len)
         for (size_t j=0; j<vlen; ++j)
-          it.out(j,ii).Set(tdatav[i][j]);
+          out[it.oofs(j,ii)].Set(tdatav[i][j]);
       }
 #endif
   while (it.remaining()>0)
@@ -2531,22 +2656,26 @@ template<typename T> NOINLINE void general_r2c(
     it.advance(1);
     auto tdata = reinterpret_cast<T *>(storage.data());
     for (size_t i=0; i<len; ++i)
-      tdata[i] = it.in(i);
-    plan.forward(tdata, fct);
-    it.out(0).Set(tdata[0]);
+      tdata[i] = in[it.iofs(i)];
+    plan->forward(tdata, fct);
+    out[it.oofs(0)].Set(tdata[0]);
     size_t i=1, ii=1;
-    for (; i<len-1; i+=2, ++ii)
-      it.out(ii).Set(tdata[i], tdata[i+1]);
+    if (forward)
+      for (; i<len-1; i+=2, ++ii)
+        out[it.oofs(ii)].Set(tdata[i], tdata[i+1]);
+    else
+      for (; i<len-1; i+=2, ++ii)
+        out[it.oofs(ii)].Set(tdata[i], -tdata[i+1]);
     if (i<len)
-      it.out(ii).Set(tdata[i]);
+      out[it.oofs(ii)].Set(tdata[i]);
     }
 } // end of parallel region
   }
 template<typename T> NOINLINE void general_c2r(
-  const ndarr<cmplx<T>> &in, ndarr<T> &out, size_t axis, T fct,
+  const cndarr<cmplx<T>> &in, ndarr<T> &out, size_t axis, bool forward, T fct,
   size_t POCKETFFT_NTHREADS)
   {
-  pocketfft_r<T> plan(out.shape(axis));
+  auto plan = get_plan<pocketfft_r<T>>(out.shape(axis));
   constexpr auto vlen = VLEN<T>::val;
   size_t len=out.shape(axis);
 #ifdef POCKETFFT_OPENMP
@@ -2554,7 +2683,7 @@ template<typename T> NOINLINE void general_c2r(
 #endif
 {
   auto storage = alloc_tmp<T>(out.shape(), len, sizeof(T));
-  multi_iter<vlen, cmplx<T>, T> it(in, out, axis);
+  multi_iter<vlen> it(in, out, axis);
 #ifndef POCKETFFT_NO_VECTORS
   if (vlen>1)
     while (it.remaining()>=vlen)
@@ -2563,94 +2692,153 @@ template<typename T> NOINLINE void general_c2r(
       it.advance(vlen);
       auto tdatav = reinterpret_cast<vtype *>(storage.data());
       for (size_t j=0; j<vlen; ++j)
-        tdatav[0][j]=it.in(j,0).r;
+        tdatav[0][j]=in[it.iofs(j,0)].r;
       {
       size_t i=1, ii=1;
-      for (; i<len-1; i+=2, ++ii)
-        for (size_t j=0; j<vlen; ++j)
-          { tdatav[i][j] = it.in(j,ii).r; tdatav[i+1][j] = it.in(j,ii).i; }
+      if (forward)
+        for (; i<len-1; i+=2, ++ii)
+          for (size_t j=0; j<vlen; ++j)
+            {
+            tdatav[i  ][j] = in[it.iofs(j,ii)].r;
+            tdatav[i+1][j] = -in[it.iofs(j,ii)].i;
+            }
+      else
+        for (; i<len-1; i+=2, ++ii)
+          for (size_t j=0; j<vlen; ++j)
+            {
+            tdatav[i  ][j] = in[it.iofs(j,ii)].r;
+            tdatav[i+1][j] = in[it.iofs(j,ii)].i;
+            }
       if (i<len)
         for (size_t j=0; j<vlen; ++j)
-          tdatav[i][j] = it.in(j,ii).r;
+          tdatav[i][j] = in[it.iofs(j,ii)].r;
       }
-      plan.backward(tdatav, fct);
+      plan->backward(tdatav, fct);
       for (size_t i=0; i<len; ++i)
         for (size_t j=0; j<vlen; ++j)
-          it.out(j,i) = tdatav[i][j];
+          out[it.oofs(j,i)] = tdatav[i][j];
       }
 #endif
   while (it.remaining()>0)
     {
     it.advance(1);
     auto tdata = reinterpret_cast<T *>(storage.data());
-    tdata[0]=it.in(0).r;
+    tdata[0]=in[it.iofs(0)].r;
     {
     size_t i=1, ii=1;
-    for (; i<len-1; i+=2, ++ii)
-      { tdata[i] = it.in(ii).r; tdata[i+1] = it.in(ii).i; }
+    if (forward)
+      for (; i<len-1; i+=2, ++ii)
+        {
+        tdata[i  ] = in[it.iofs(ii)].r;
+        tdata[i+1] = -in[it.iofs(ii)].i;
+        }
+    else
+      for (; i<len-1; i+=2, ++ii)
+        {
+        tdata[i  ] = in[it.iofs(ii)].r;
+        tdata[i+1] = in[it.iofs(ii)].i;
+        }
     if (i<len)
-      tdata[i] = it.in(ii).r;
+      tdata[i] = in[it.iofs(ii)].r;
     }
-    plan.backward(tdata, fct);
+    plan->backward(tdata, fct);
     for (size_t i=0; i<len; ++i)
-      it.out(i) = tdata[i];
+      out[it.oofs(i)] = tdata[i];
     }
 } // end of parallel region
   }
 
 template<typename T> NOINLINE void general_r(
-  const ndarr<T> &in, ndarr<T> &out, size_t axis, bool forward, T fct,
-  size_t POCKETFFT_NTHREADS)
+  const cndarr<T> &in, ndarr<T> &out, const shape_t &axes, bool r2c,
+  bool forward, T fct, size_t POCKETFFT_NTHREADS)
   {
-  constexpr auto vlen = VLEN<T>::val;
-  size_t len=in.shape(axis);
-  pocketfft_r<T> plan(len);
+  shared_ptr<pocketfft_r<T>> plan;
+
+  for (size_t iax=0; iax<axes.size(); ++iax)
+    {
+    constexpr auto vlen = VLEN<T>::val;
+    size_t len=in.shape(axes[iax]);
+    if ((!plan) || (len!=plan->length()))
+      plan = get_plan<pocketfft_r<T>>(len);
+
 #ifdef POCKETFFT_OPENMP
-#pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axis))
+#pragma omp parallel num_threads(util::thread_count(nthreads, in.shape(), axes[iax]))
 #endif
 {
-  auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
-  multi_iter<vlen, T, T> it(in, out, axis);
+    auto storage = alloc_tmp<T>(in.shape(), len, sizeof(T));
+    const auto &tin(iax==0 ? in : out);
+    multi_iter<vlen> it(tin, out, axes[iax]);
 #ifndef POCKETFFT_NO_VECTORS
-  if (vlen>1)
-    while (it.remaining()>=vlen)
-      {
-      using vtype = typename VTYPE<T>::type;
-      it.advance(vlen);
-      auto tdatav = reinterpret_cast<vtype *>(storage.data());
-      for (size_t i=0; i<len; ++i)
-        for (size_t j=0; j<vlen; ++j)
-          tdatav[i][j] = it.in(j,i);
-      forward ? plan.forward (tdatav, fct)
-              : plan.backward(tdatav, fct);
-      for (size_t i=0; i<len; ++i)
-        for (size_t j=0; j<vlen; ++j)
-          it.out(j,i) = tdatav[i][j];
-      }
+    if (vlen>1)
+      while (it.remaining()>=vlen)
+        {
+        using vtype = typename VTYPE<T>::type;
+        it.advance(vlen);
+        auto tdatav = reinterpret_cast<vtype *>(storage.data());
+        for (size_t i=0; i<len; ++i)
+          for (size_t j=0; j<vlen; ++j)
+            tdatav[i][j] = tin[it.iofs(j,i)];
+        if ((!r2c) && forward)
+          for (size_t i=2; i<len; i+=2)
+            for (size_t j=0; j<vlen; ++j)
+              tdatav[i][j] = -tdatav[i][j];
+        forward ? plan->forward (tdatav, fct)
+                : plan->backward(tdatav, fct);
+        if (r2c && (!forward))
+          for (size_t i=2; i<len; i+=2)
+            for (size_t j=0; j<vlen; ++j)
+              tdatav[i][j] = -tdatav[i][j];
+        for (size_t i=0; i<len; ++i)
+          for (size_t j=0; j<vlen; ++j)
+            out[it.oofs(j,i)] = tdatav[i][j];
+        }
 #endif
-  while (it.remaining()>0)
-    {
-    it.advance(1);
-    auto tdata = reinterpret_cast<T *>(storage.data());
-    if (it.inplace() && it.contiguous_out()) // fully in-place
-      forward ? plan.forward (&it.out(0), fct)
-              : plan.backward(&it.out(0), fct);
-    else if (it.contiguous_out()) // compute FFT in output location
+    while (it.remaining()>0)
       {
-      for (size_t i=0; i<len; ++i)
-        it.out(i) = it.in(i);
-      forward ? plan.forward (&it.out(0), fct) : plan.backward(&it.out(0), fct);
+      it.advance(1);
+      auto tdata = reinterpret_cast<T *>(storage.data());
+      if ((&tin[0]==&out[0]) && (it.stride_out()==sizeof(T))) // fully in-place
+        {
+        if ((!r2c) && forward)
+          for (size_t i=2; i<len; i+=2)
+            out[it.oofs(i)] = -out[it.oofs(i)];
+        forward ? plan->forward (&out[it.oofs(0)], fct)
+                : plan->backward(&out[it.oofs(0)], fct);
+        if (r2c && (!forward))
+          for (size_t i=2; i<len; i+=2)
+            out[it.oofs(i)] = -out[it.oofs(i)];
+        }
+      else if (it.stride_out()==sizeof(T)) // compute FFT in output location
+        {
+        for (size_t i=0; i<len; ++i)
+          out[it.oofs(i)] = tin[it.iofs(i)];
+        if ((!r2c) && forward)
+          for (size_t i=2; i<len; i+=2)
+            out[it.oofs(i)] = -out[it.oofs(i)];
+        forward ? plan->forward (&out[it.oofs(0)], fct)
+                : plan->backward(&out[it.oofs(0)], fct);
+        if (r2c && (!forward))
+          for (size_t i=2; i<len; i+=2)
+            out[it.oofs(i)] = -out[it.oofs(i)];
+        }
+      else
+        {
+        for (size_t i=0; i<len; ++i)
+          tdata[i] = tin[it.iofs(i)];
+        if ((!r2c) && forward)
+          for (size_t i=2; i<len; i+=2)
+            tdata[i] = -tdata[i];
+        forward ? plan->forward (tdata, fct) : plan->backward(tdata, fct);
+        if (r2c && (!forward))
+          for (size_t i=2; i<len; i+=2)
+            tdata[i] = -tdata[i];
+        for (size_t i=0; i<len; ++i)
+          out[it.oofs(i)] = tdata[i];
+        }
       }
-    else
-      {
-      for (size_t i=0; i<len; ++i)
-        tdata[i] = it.in(i);
-      forward ? plan.forward (tdata, fct) : plan.backward(tdata, fct);
-      for (size_t i=0; i<len; ++i)
-        it.out(i) = tdata[i];
-      }
-    }
 } // end of parallel region
+    fct = T(1); // factor has been applied, use 1 for remaining axes
+    }
   }
 
 #undef POCKETFFT_NTHREADS
@@ -2662,62 +2850,66 @@ template<typename T> void c2c(const shape_t &shape, const stride_t &stride_in,
   {
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
-  ndarr<cmplx<T>> ain(data_in, shape, stride_in),
-                  aout(data_out, shape, stride_out);
+  cndarr<cmplx<T>> ain(data_in, shape, stride_in);
+  ndarr<cmplx<T>> aout(data_out, shape, stride_out);
   general_c(ain, aout, axes, forward, fct, nthreads);
   }
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const T *data_in, complex<T> *data_out, T fct, size_t nthreads=1)
+  bool forward, const T *data_in, complex<T> *data_out, T fct,
+  size_t nthreads=1)
   {
   if (util::prod(shape_in)==0) return;
   util::sanity_check(shape_in, stride_in, stride_out, false, axis);
-  ndarr<T> ain(data_in, shape_in, stride_in);
+  cndarr<T> ain(data_in, shape_in, stride_in);
   shape_t shape_out(shape_in);
   shape_out[axis] = shape_in[axis]/2 + 1;
   ndarr<cmplx<T>> aout(data_out, shape_out, stride_out);
-  general_r2c(ain, aout, axis, fct, nthreads);
+  general_r2c(ain, aout, axis, forward, fct, nthreads);
   }
 
 template<typename T> void r2c(const shape_t &shape_in,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const T *data_in, complex<T> *data_out, T fct, size_t nthreads=1)
+  bool forward, const T *data_in, complex<T> *data_out, T fct,
+  size_t nthreads=1)
   {
   if (util::prod(shape_in)==0) return;
   util::sanity_check(shape_in, stride_in, stride_out, false, axes);
-  r2c(shape_in, stride_in, stride_out, axes.back(), data_in, data_out, fct,
-    nthreads);
+  r2c(shape_in, stride_in, stride_out, axes.back(), forward, data_in, data_out,
+    fct, nthreads);
   if (axes.size()==1) return;
 
   shape_t shape_out(shape_in);
   shape_out[axes.back()] = shape_in[axes.back()]/2 + 1;
   auto newaxes = shape_t{axes.begin(), --axes.end()};
-  c2c(shape_out, stride_out, stride_out, newaxes, true, data_out, data_out,
+  c2c(shape_out, stride_out, stride_out, newaxes, forward, data_out, data_out,
     T(1), nthreads);
   }
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  const complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
+  bool forward, const complex<T> *data_in, T *data_out, T fct,
+  size_t nthreads=1)
   {
   if (util::prod(shape_out)==0) return;
   util::sanity_check(shape_out, stride_in, stride_out, false, axis);
   shape_t shape_in(shape_out);
   shape_in[axis] = shape_out[axis]/2 + 1;
-  ndarr<cmplx<T>> ain(data_in, shape_in, stride_in);
+  cndarr<cmplx<T>> ain(data_in, shape_in, stride_in);
   ndarr<T> aout(data_out, shape_out, stride_out);
-  general_c2r(ain, aout, axis, fct, nthreads);
+  general_c2r(ain, aout, axis, forward, fct, nthreads);
   }
 
 template<typename T> void c2r(const shape_t &shape_out,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  const complex<T> *data_in, T *data_out, T fct, size_t nthreads=1)
+  bool forward, const complex<T> *data_in, T *data_out, T fct,
+  size_t nthreads=1)
   {
   if (util::prod(shape_out)==0) return;
   if (axes.size()==1)
-    return c2r(shape_out, stride_in, stride_out, axes[0], data_in, data_out,
-      fct, nthreads);
+    return c2r(shape_out, stride_in, stride_out, axes[0], forward,
+      data_in, data_out, fct, nthreads);
   util::sanity_check(shape_out, stride_in, stride_out, false, axes);
   auto shape_in = shape_out;
   shape_in[axes.back()] = shape_out[axes.back()]/2 + 1;
@@ -2728,29 +2920,32 @@ template<typename T> void c2r(const shape_t &shape_out,
     stride_inter[size_t(i)] = stride_inter[size_t(i+1)]*ptrdiff_t(shape_in[size_t(i+1)]);
   arr<complex<T>> tmp(nval);
   auto newaxes = shape_t({axes.begin(), --axes.end()});
-  c2c(shape_in, stride_in, stride_inter, newaxes, false, data_in, tmp.data(),
+  c2c(shape_in, stride_in, stride_inter, newaxes, forward, data_in, tmp.data(),
     T(1), nthreads);
-  c2r(shape_out, stride_inter, stride_out, axes.back(), tmp.data(), data_out,
-    fct, nthreads);
+  c2r(shape_out, stride_inter, stride_out, axes.back(), forward,
+    tmp.data(), data_out, fct, nthreads);
   }
 
 template<typename T> void r2r_fftpack(const shape_t &shape,
-  const stride_t &stride_in, const stride_t &stride_out, size_t axis,
-  bool forward, const T *data_in, T *data_out, T fct, size_t nthreads=1)
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  bool r2hc, bool forward, const T *data_in, T *data_out, T fct,
+  size_t nthreads=1)
   {
   if (util::prod(shape)==0) return;
-  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axis);
-  ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
-  general_r(ain, aout, axis, forward, fct, nthreads);
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
+  cndarr<T> ain(data_in, shape, stride_in);
+  ndarr<T> aout(data_out, shape, stride_out);
+  general_r(ain, aout, axes, r2hc, forward, fct, nthreads);
   }
 
-template<typename T> void r2r_hartley(const shape_t &shape,
+template<typename T> void r2r_separable_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const T *data_in, T *data_out, T fct, size_t nthreads=1)
   {
   if (util::prod(shape)==0) return;
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
-  ndarr<T> ain(data_in, shape, stride_in), aout(data_out, shape, stride_out);
+  cndarr<T> ain(data_in, shape, stride_in);
+  ndarr<T> aout(data_out, shape, stride_out);
   general_hartley(ain, aout, axes, fct, nthreads);
   }
 
@@ -2764,7 +2959,7 @@ using detail::c2c;
 using detail::c2r;
 using detail::r2c;
 using detail::r2r_fftpack;
-using detail::r2r_hartley;
+using detail::r2r_separable_hartley;
 
 } // namespace pocketfft
 
