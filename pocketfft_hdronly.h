@@ -407,14 +407,12 @@ struct util // hack to avoid duplicate symbols
     while ((n&1)==0)
       { res=2; n>>=1; }
 
-    size_t limit=size_t(sqrt(double(n)+0.01));
-    for (size_t x=3; x<=limit; x+=2)
-    while ((n/x)*x==n)
-      {
-      res=x;
-      n/=x;
-      limit=size_t(sqrt(double(n)+0.01));
-      }
+    for (size_t x=3; x*x<=n; x+=2)
+      while ((n%x)==0)
+        {
+        res=x;
+        n/=x;
+        }
     if (n>1) res=n;
 
     return res;
