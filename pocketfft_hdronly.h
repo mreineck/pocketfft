@@ -199,12 +199,12 @@ template<typename T> struct cmplx {
   template<typename T2> auto operator* (const cmplx<T2> &other) const
     -> cmplx<decltype(r+other.r)>
     { return {r*other.r-i*other.i, r*other.i + i*other.r}; }
-  template<bool bwd, typename T2> auto special_mul (const cmplx<T2> &other) const
+  template<bool fwd, typename T2> auto special_mul (const cmplx<T2> &other) const
     -> cmplx<decltype(r+other.r)>
     {
     using Tres = cmplx<decltype(r+other.r)>;
-    return bwd ? Tres(r*other.r-i*other.i, r*other.i + i*other.r)
-               : Tres(r*other.r+i*other.i, i*other.r - r*other.i);
+    return fwd ? Tres(r*other.r+i*other.i, i*other.r-r*other.i)
+               : Tres(r*other.r-i*other.i, r*other.i+i*other.r);
     }
 };
 template<typename T> void PMC(cmplx<T> &a, cmplx<T> &b,
@@ -215,8 +215,8 @@ template<typename T> cmplx<T> conj(const cmplx<T> &a)
 
 template<typename T> void ROT90(cmplx<T> &a)
   { auto tmp_=a.r; a.r=-a.i; a.i=tmp_; }
-template<bool bwd, typename T> void ROTX90(cmplx<T> &a)
-  { auto tmp_= bwd ? a.r : -a.r; a.r = bwd ? -a.i : a.i; a.i=tmp_; }
+template<bool fwd, typename T> void ROTX90(cmplx<T> &a)
+  { auto tmp_= fwd ? -a.r : a.r; a.r = fwd ? a.i : -a.i; a.i=tmp_; }
 
 //
 // twiddle factor section
@@ -497,14 +497,10 @@ struct util // hack to avoid duplicate symbols
       return (nthreads==0) ? size_t(omp_get_max_threads()) : nthreads;
       }
 #else
-    static size_t nthreads() { return 1; }
-    static size_t thread_num() { return 0; }
+    static constexpr size_t nthreads() { return 1; }
+    static constexpr size_t thread_num() { return 0; }
 #endif
   };
-
-#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
-#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
-#define WA(x,i) wa[(i)-1+(x)*(ido-1)]
 
 //
 // complex FFTPACK transforms
@@ -526,10 +522,17 @@ template<typename T0> class cfftp
     void add_factor(size_t factor)
       { fact.push_back({factor, nullptr, nullptr}); }
 
-template<bool bwd, typename T> void pass2 (size_t ido, size_t l1,
+template<bool fwd, typename T> void pass2 (size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa)
   {
   constexpr size_t cdim=2;
+
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto WA = [wa, ido](size_t x, size_t i)
+    { return wa[i-1+x*(ido-1)]; };
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -545,67 +548,81 @@ template<bool bwd, typename T> void pass2 (size_t ido, size_t l1,
       for (size_t i=1; i<ido; ++i)
         {
         CH(i,k,0) = CC(i,0,k)+CC(i,1,k);
-        CH(i,k,1) = (CC(i,0,k)-CC(i,1,k)).template special_mul<bwd>(WA(0,i));
+        CH(i,k,1) = (CC(i,0,k)-CC(i,1,k)).template special_mul<fwd>(WA(0,i));
         }
       }
   }
 
-#define PREP3(idx) \
+#define POCKETFFT_PREP3(idx) \
         T t0 = CC(idx,0,k), t1, t2; \
         PMC (t1,t2,CC(idx,1,k),CC(idx,2,k)); \
         CH(idx,k,0)=t0+t1;
-#define PARTSTEP3a(u1,u2,twr,twi) \
+#define POCKETFFT_PARTSTEP3a(u1,u2,twr,twi) \
         { \
         T ca,cb; \
         ca=t0+t1*twr; \
         cb=t2*twi; ROT90(cb); \
         PMC(CH(0,k,u1),CH(0,k,u2),ca,cb) ;\
         }
-#define PARTSTEP3b(u1,u2,twr,twi) \
+#define POCKETFFT_PARTSTEP3b(u1,u2,twr,twi) \
         { \
         T ca,cb,da,db; \
         ca=t0+t1*twr; \
         cb=t2*twi; ROT90(cb); \
         PMC(da,db,ca,cb); \
-        CH(i,k,u1) = da.template special_mul<bwd>(WA(u1-1,i)); \
-        CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
+        CH(i,k,u1) = da.template special_mul<fwd>(WA(u1-1,i)); \
+        CH(i,k,u2) = db.template special_mul<fwd>(WA(u2-1,i)); \
         }
-template<bool bwd, typename T> void pass3 (size_t ido, size_t l1,
+template<bool fwd, typename T> void pass3 (size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa)
   {
   constexpr size_t cdim=3;
   constexpr T0 tw1r=-0.5,
-               tw1i= (bwd ? 1: -1) * T0(0.8660254037844386467637231707529362L);
+               tw1i= (fwd ? -1: 1) * T0(0.8660254037844386467637231707529362L);
+
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto WA = [wa, ido](size_t x, size_t i)
+    { return wa[i-1+x*(ido-1)]; };
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
       {
-      PREP3(0)
-      PARTSTEP3a(1,2,tw1r,tw1i)
+      POCKETFFT_PREP3(0)
+      POCKETFFT_PARTSTEP3a(1,2,tw1r,tw1i)
       }
   else
     for (size_t k=0; k<l1; ++k)
       {
       {
-      PREP3(0)
-      PARTSTEP3a(1,2,tw1r,tw1i)
+      POCKETFFT_PREP3(0)
+      POCKETFFT_PARTSTEP3a(1,2,tw1r,tw1i)
       }
       for (size_t i=1; i<ido; ++i)
         {
-        PREP3(i)
-        PARTSTEP3b(1,2,tw1r,tw1i)
+        POCKETFFT_PREP3(i)
+        POCKETFFT_PARTSTEP3b(1,2,tw1r,tw1i)
         }
       }
   }
 
-#undef PARTSTEP3b
-#undef PARTSTEP3a
-#undef PREP3
+#undef POCKETFFT_PARTSTEP3b
+#undef POCKETFFT_PARTSTEP3a
+#undef POCKETFFT_PREP3
 
-template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
+template<bool fwd, typename T> void pass4 (size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa)
   {
   constexpr size_t cdim=4;
+
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto WA = [wa, ido](size_t x, size_t i)
+    { return wa[i-1+x*(ido-1)]; };
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -613,7 +630,7 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
       T t1, t2, t3, t4;
       PMC(t2,t1,CC(0,0,k),CC(0,2,k));
       PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      ROTX90<bwd>(t4);
+      ROTX90<fwd>(t4);
       PMC(CH(0,k,0),CH(0,k,2),t2,t3);
       PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
@@ -624,7 +641,7 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
       T t1, t2, t3, t4;
       PMC(t2,t1,CC(0,0,k),CC(0,2,k));
       PMC(t3,t4,CC(0,1,k),CC(0,3,k));
-      ROTX90<bwd>(t4);
+      ROTX90<fwd>(t4);
       PMC(CH(0,k,0),CH(0,k,2),t2,t3);
       PMC(CH(0,k,1),CH(0,k,3),t1,t4);
       }
@@ -634,24 +651,24 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
         T cc0=CC(i,0,k), cc1=CC(i,1,k),cc2=CC(i,2,k),cc3=CC(i,3,k);
         PMC(t2,t1,cc0,cc2);
         PMC(t3,t4,cc1,cc3);
-        ROTX90<bwd>(t4);
+        ROTX90<fwd>(t4);
         PMC(CH(i,k,0),c3,t2,t3);
         PMC(c2,c4,t1,t4);
-        CH(i,k,1) = c2.template special_mul<bwd>(WA(0,i));
-        CH(i,k,2) = c3.template special_mul<bwd>(WA(1,i));
-        CH(i,k,3) = c4.template special_mul<bwd>(WA(2,i));
+        CH(i,k,1) = c2.template special_mul<fwd>(WA(0,i));
+        CH(i,k,2) = c3.template special_mul<fwd>(WA(1,i));
+        CH(i,k,3) = c4.template special_mul<fwd>(WA(2,i));
         }
       }
   }
 
-#define PREP5(idx) \
+#define POCKETFFT_PREP5(idx) \
         T t0 = CC(idx,0,k), t1, t2, t3, t4; \
         PMC (t1,t4,CC(idx,1,k),CC(idx,4,k)); \
         PMC (t2,t3,CC(idx,2,k),CC(idx,3,k)); \
         CH(idx,k,0).r=t0.r+t1.r+t2.r; \
         CH(idx,k,0).i=t0.i+t1.i+t2.i;
 
-#define PARTSTEP5a(u1,u2,twar,twbr,twai,twbi) \
+#define POCKETFFT_PARTSTEP5a(u1,u2,twar,twbr,twai,twbi) \
         { \
         T ca,cb; \
         ca.r=t0.r+twar*t1.r+twbr*t2.r; \
@@ -661,7 +678,7 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
         PMC(CH(0,k,u1),CH(0,k,u2),ca,cb); \
         }
 
-#define PARTSTEP5b(u1,u2,twar,twbr,twai,twbi) \
+#define POCKETFFT_PARTSTEP5b(u1,u2,twar,twbr,twai,twbi) \
         { \
         T ca,cb,da,db; \
         ca.r=t0.r+twar*t1.r+twbr*t2.r; \
@@ -669,47 +686,54 @@ template<bool bwd, typename T> void pass4 (size_t ido, size_t l1,
         cb.i=twai*t4.r twbi*t3.r; \
         cb.r=-(twai*t4.i twbi*t3.i); \
         PMC(da,db,ca,cb); \
-        CH(i,k,u1) = da.template special_mul<bwd>(WA(u1-1,i)); \
-        CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
+        CH(i,k,u1) = da.template special_mul<fwd>(WA(u1-1,i)); \
+        CH(i,k,u2) = db.template special_mul<fwd>(WA(u2-1,i)); \
         }
-template<bool bwd, typename T> void pass5 (size_t ido, size_t l1,
+template<bool fwd, typename T> void pass5 (size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa)
   {
   constexpr size_t cdim=5;
   constexpr T0 tw1r= T0(0.3090169943749474241022934171828191L),
-               tw1i= (bwd ? 1: -1) * T0(0.9510565162951535721164393333793821L),
+               tw1i= (fwd ? -1: 1) * T0(0.9510565162951535721164393333793821L),
                tw2r= T0(-0.8090169943749474241022934171828191L),
-               tw2i= (bwd ? 1: -1) * T0(0.5877852522924731291687059546390728L);
+               tw2i= (fwd ? -1: 1) * T0(0.5877852522924731291687059546390728L);
+
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto WA = [wa, ido](size_t x, size_t i)
+    { return wa[i-1+x*(ido-1)]; };
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
       {
-      PREP5(0)
-      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
-      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+      POCKETFFT_PREP5(0)
+      POCKETFFT_PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+      POCKETFFT_PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
       }
   else
     for (size_t k=0; k<l1; ++k)
       {
       {
-      PREP5(0)
-      PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
-      PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+      POCKETFFT_PREP5(0)
+      POCKETFFT_PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+      POCKETFFT_PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
       }
       for (size_t i=1; i<ido; ++i)
         {
-        PREP5(i)
-        PARTSTEP5b(1,4,tw1r,tw2r,+tw1i,+tw2i)
-        PARTSTEP5b(2,3,tw2r,tw1r,+tw2i,-tw1i)
+        POCKETFFT_PREP5(i)
+        POCKETFFT_PARTSTEP5b(1,4,tw1r,tw2r,+tw1i,+tw2i)
+        POCKETFFT_PARTSTEP5b(2,3,tw2r,tw1r,+tw2i,-tw1i)
         }
       }
   }
 
-#undef PARTSTEP5b
-#undef PARTSTEP5a
-#undef PREP5
+#undef POCKETFFT_PARTSTEP5b
+#undef POCKETFFT_PARTSTEP5a
+#undef POCKETFFT_PREP5
 
-#define PREP7(idx) \
+#define POCKETFFT_PREP7(idx) \
         T t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7; \
         PMC (t2,t7,CC(idx,1,k),CC(idx,6,k)); \
         PMC (t3,t6,CC(idx,2,k),CC(idx,5,k)); \
@@ -717,7 +741,7 @@ template<bool bwd, typename T> void pass5 (size_t ido, size_t l1,
         CH(idx,k,0).r=t1.r+t2.r+t3.r+t4.r; \
         CH(idx,k,0).i=t1.i+t2.i+t3.i+t4.i;
 
-#define PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,out1,out2) \
+#define POCKETFFT_PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,out1,out2) \
         { \
         T ca,cb; \
         ca.r=t1.r+x1*t2.r+x2*t3.r+x3*t4.r; \
@@ -726,82 +750,96 @@ template<bool bwd, typename T> void pass5 (size_t ido, size_t l1,
         cb.r=-(y1*t7.i y2*t6.i y3*t5.i); \
         PMC(out1,out2,ca,cb); \
         }
-#define PARTSTEP7a(u1,u2,x1,x2,x3,y1,y2,y3) \
-        PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,CH(0,k,u1),CH(0,k,u2))
-#define PARTSTEP7(u1,u2,x1,x2,x3,y1,y2,y3) \
+#define POCKETFFT_PARTSTEP7a(u1,u2,x1,x2,x3,y1,y2,y3) \
+        POCKETFFT_PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,CH(0,k,u1),CH(0,k,u2))
+#define POCKETFFT_PARTSTEP7(u1,u2,x1,x2,x3,y1,y2,y3) \
         { \
         T da,db; \
-        PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,da,db) \
-        CH(i,k,u1) = da.template special_mul<bwd>(WA(u1-1,i)); \
-        CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
+        POCKETFFT_PARTSTEP7a0(u1,u2,x1,x2,x3,y1,y2,y3,da,db) \
+        CH(i,k,u1) = da.template special_mul<fwd>(WA(u1-1,i)); \
+        CH(i,k,u2) = db.template special_mul<fwd>(WA(u2-1,i)); \
         }
 
-template<bool bwd, typename T> void pass7(size_t ido, size_t l1,
+template<bool fwd, typename T> void pass7(size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa)
   {
   constexpr size_t cdim=7;
   constexpr T0 tw1r= T0(0.6234898018587335305250048840042398L),
-               tw1i= (bwd ? 1 : -1) * T0(0.7818314824680298087084445266740578L),
+               tw1i= (fwd ? -1 : 1) * T0(0.7818314824680298087084445266740578L),
                tw2r= T0(-0.2225209339563144042889025644967948L),
-               tw2i= (bwd ? 1 : -1) * T0(0.9749279121818236070181316829939312L),
+               tw2i= (fwd ? -1 : 1) * T0(0.9749279121818236070181316829939312L),
                tw3r= T0(-0.9009688679024191262361023195074451L),
-               tw3i= (bwd ? 1 : -1) * T0(0.433883739117558120475768332848359L);
+               tw3i= (fwd ? -1 : 1) * T0(0.433883739117558120475768332848359L);
+
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto WA = [wa, ido](size_t x, size_t i)
+    { return wa[i-1+x*(ido-1)]; };
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
       {
-      PREP7(0)
-      PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
-      PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
-      PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+      POCKETFFT_PREP7(0)
+      POCKETFFT_PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+      POCKETFFT_PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+      POCKETFFT_PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
       }
   else
     for (size_t k=0; k<l1; ++k)
       {
       {
-      PREP7(0)
-      PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
-      PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
-      PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+      POCKETFFT_PREP7(0)
+      POCKETFFT_PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+      POCKETFFT_PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+      POCKETFFT_PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
       }
       for (size_t i=1; i<ido; ++i)
         {
-        PREP7(i)
-        PARTSTEP7(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
-        PARTSTEP7(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
-        PARTSTEP7(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+        POCKETFFT_PREP7(i)
+        POCKETFFT_PARTSTEP7(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+        POCKETFFT_PARTSTEP7(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+        POCKETFFT_PARTSTEP7(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
         }
       }
   }
 
-#undef PARTSTEP7
-#undef PARTSTEP7a0
-#undef PARTSTEP7a
-#undef PREP7
+#undef POCKETFFT_PARTSTEP7
+#undef POCKETFFT_PARTSTEP7a0
+#undef POCKETFFT_PARTSTEP7a
+#undef POCKETFFT_PREP7
 
-template <bool bwd, typename T> void ROTX45(T &a)
+template <bool fwd, typename T> void ROTX45(T &a)
   {
   constexpr T0 hsqt2=T0(0.707106781186547524400844362104849L);
-  if (bwd)
-    { auto tmp_=a.r; a.r=hsqt2*(a.r-a.i); a.i=hsqt2*(a.i+tmp_); }
-  else
+  if (fwd)
     { auto tmp_=a.r; a.r=hsqt2*(a.r+a.i); a.i=hsqt2*(a.i-tmp_); }
+  else
+    { auto tmp_=a.r; a.r=hsqt2*(a.r-a.i); a.i=hsqt2*(a.i+tmp_); }
   }
-template <bool bwd, typename T> void ROTX135(T &a)
+template <bool fwd, typename T> void ROTX135(T &a)
   {
   constexpr T0 hsqt2=T0(0.707106781186547524400844362104849L);
-  if (bwd)
-    { auto tmp_=a.r; a.r=hsqt2*(-a.r-a.i); a.i=hsqt2*(tmp_-a.i); }
-  else
+  if (fwd)
     { auto tmp_=a.r; a.r=hsqt2*(a.i-a.r); a.i=hsqt2*(-tmp_-a.i); }
+  else
+    { auto tmp_=a.r; a.r=hsqt2*(-a.r-a.i); a.i=hsqt2*(tmp_-a.i); }
   }
 template<typename T> inline void PMINPLACE(T &a, T &b)
   { T t = a; a.r+=b.r; a.i+=b.i; b.r=t.r-b.r; b.i=t.i-b.i; }
 
-template<bool bwd, typename T> void pass8 (size_t ido, size_t l1,
+template<bool fwd, typename T> void pass8 (size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa)
   {
   constexpr size_t cdim=8;
+
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto WA = [wa, ido](size_t x, size_t i)
+    { return wa[i-1+x*(ido-1)]; };
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
@@ -811,15 +849,15 @@ template<bool bwd, typename T> void pass8 (size_t ido, size_t l1,
       PMC(a1,a5,CC(0,1,k),CC(0,5,k));
       PMC(a2,a6,CC(0,2,k),CC(0,6,k));
       PMC(a3,a7,CC(0,3,k),CC(0,7,k));
-      ROTX90<bwd>(a6);
-      ROTX90<bwd>(a7);
+      ROTX90<fwd>(a6);
+      ROTX90<fwd>(a7);
       PMINPLACE(a0,a2);
       PMINPLACE(a1,a3);
       PMINPLACE(a4,a6);
       PMINPLACE(a5,a7);
-      ROTX45<bwd>(a5);
-      ROTX90<bwd>(a3);
-      ROTX135<bwd>(a7);
+      ROTX45<fwd>(a5);
+      ROTX90<fwd>(a3);
+      ROTX135<fwd>(a7);
       PMC(CH(0,k,0),CH(0,k,4),a0,a1);
       PMC(CH(0,k,1),CH(0,k,5),a4,a5);
       PMC(CH(0,k,2),CH(0,k,6),a2,a3);
@@ -833,15 +871,15 @@ template<bool bwd, typename T> void pass8 (size_t ido, size_t l1,
       PMC(a1,a5,CC(0,1,k),CC(0,5,k));
       PMC(a2,a6,CC(0,2,k),CC(0,6,k));
       PMC(a3,a7,CC(0,3,k),CC(0,7,k));
-      ROTX90<bwd>(a6);
-      ROTX90<bwd>(a7);
+      ROTX90<fwd>(a6);
+      ROTX90<fwd>(a7);
       PMINPLACE(a0,a2);
       PMINPLACE(a1,a3);
       PMINPLACE(a4,a6);
       PMINPLACE(a5,a7);
-      ROTX45<bwd>(a5);
-      ROTX90<bwd>(a3);
-      ROTX135<bwd>(a7);
+      ROTX45<fwd>(a5);
+      ROTX90<fwd>(a3);
+      ROTX135<fwd>(a7);
       PMC(CH(0,k,0),CH(0,k,4),a0,a1);
       PMC(CH(0,k,1),CH(0,k,5),a4,a5);
       PMC(CH(0,k,2),CH(0,k,6),a2,a3);
@@ -854,33 +892,33 @@ template<bool bwd, typename T> void pass8 (size_t ido, size_t l1,
         PMC(a1,a5,CC(i,1,k),CC(i,5,k));
         PMC(a2,a6,CC(i,2,k),CC(i,6,k));
         PMC(a3,a7,CC(i,3,k),CC(i,7,k));
-        ROTX90<bwd>(a6);
-        ROTX90<bwd>(a7);
+        ROTX90<fwd>(a6);
+        ROTX90<fwd>(a7);
         PMINPLACE(a0,a2);
         PMINPLACE(a1,a3);
         PMINPLACE(a4,a6);
         PMINPLACE(a5,a7);
-        ROTX45<bwd>(a5);
-        ROTX90<bwd>(a3);
-        ROTX135<bwd>(a7);
+        ROTX45<fwd>(a5);
+        ROTX90<fwd>(a3);
+        ROTX135<fwd>(a7);
         PMINPLACE(a0,a1);
         PMINPLACE(a2,a3);
         PMINPLACE(a4,a5);
         PMINPLACE(a6,a7);
         CH(i,k,0) = a0;
-        CH(i,k,1) = a4.template special_mul<bwd>(WA(0,i));
-        CH(i,k,2) = a2.template special_mul<bwd>(WA(1,i));
-        CH(i,k,3) = a6.template special_mul<bwd>(WA(2,i));
-        CH(i,k,4) = a1.template special_mul<bwd>(WA(3,i));
-        CH(i,k,5) = a5.template special_mul<bwd>(WA(4,i));
-        CH(i,k,6) = a3.template special_mul<bwd>(WA(5,i));
-        CH(i,k,7) = a7.template special_mul<bwd>(WA(6,i));
+        CH(i,k,1) = a4.template special_mul<fwd>(WA(0,i));
+        CH(i,k,2) = a2.template special_mul<fwd>(WA(1,i));
+        CH(i,k,3) = a6.template special_mul<fwd>(WA(2,i));
+        CH(i,k,4) = a1.template special_mul<fwd>(WA(3,i));
+        CH(i,k,5) = a5.template special_mul<fwd>(WA(4,i));
+        CH(i,k,6) = a3.template special_mul<fwd>(WA(5,i));
+        CH(i,k,7) = a7.template special_mul<fwd>(WA(6,i));
         }
       }
    }
 
 
-#define PREP11(idx) \
+#define POCKETFFT_PREP11(idx) \
         T t1 = CC(idx,0,k), t2, t3, t4, t5, t6, t7, t8, t9, t10, t11; \
         PMC (t2,t11,CC(idx,1,k),CC(idx,10,k)); \
         PMC (t3,t10,CC(idx,2,k),CC(idx, 9,k)); \
@@ -904,29 +942,36 @@ template<bool bwd, typename T> void pass8 (size_t ido, size_t l1,
         { \
         T da,db; \
         PARTSTEP11a0(u1,u2,x1,x2,x3,x4,x5,y1,y2,y3,y4,y5,da,db) \
-        CH(i,k,u1) = da.template special_mul<bwd>(WA(u1-1,i)); \
-        CH(i,k,u2) = db.template special_mul<bwd>(WA(u2-1,i)); \
+        CH(i,k,u1) = da.template special_mul<fwd>(WA(u1-1,i)); \
+        CH(i,k,u2) = db.template special_mul<fwd>(WA(u2-1,i)); \
         }
 
-template<bool bwd, typename T> void pass11 (size_t ido, size_t l1,
+template<bool fwd, typename T> void pass11 (size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa)
   {
   constexpr size_t cdim=11;
   constexpr T0 tw1r= T0(0.8412535328311811688618116489193677L),
-               tw1i= (bwd ? 1 : -1) * T0(0.5406408174555975821076359543186917L),
+               tw1i= (fwd ? -1 : 1) * T0(0.5406408174555975821076359543186917L),
                tw2r= T0(0.4154150130018864255292741492296232L),
-               tw2i= (bwd ? 1 : -1) * T0(0.9096319953545183714117153830790285L),
+               tw2i= (fwd ? -1 : 1) * T0(0.9096319953545183714117153830790285L),
                tw3r= T0(-0.1423148382732851404437926686163697L),
-               tw3i= (bwd ? 1 : -1) * T0(0.9898214418809327323760920377767188L),
+               tw3i= (fwd ? -1 : 1) * T0(0.9898214418809327323760920377767188L),
                tw4r= T0(-0.6548607339452850640569250724662936L),
-               tw4i= (bwd ? 1 : -1) * T0(0.7557495743542582837740358439723444L),
+               tw4i= (fwd ? -1 : 1) * T0(0.7557495743542582837740358439723444L),
                tw5r= T0(-0.9594929736144973898903680570663277L),
-               tw5i= (bwd ? 1 : -1) * T0(0.2817325568414296977114179153466169L);
+               tw5i= (fwd ? -1 : 1) * T0(0.2817325568414296977114179153466169L);
+
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto WA = [wa, ido](size_t x, size_t i)
+    { return wa[i-1+x*(ido-1)]; };
 
   if (ido==1)
     for (size_t k=0; k<l1; ++k)
       {
-      PREP11(0)
+      POCKETFFT_PREP11(0)
       PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
       PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
       PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
@@ -937,7 +982,7 @@ template<bool bwd, typename T> void pass11 (size_t ido, size_t l1,
     for (size_t k=0; k<l1; ++k)
       {
       {
-      PREP11(0)
+      POCKETFFT_PREP11(0)
       PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
       PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
       PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
@@ -946,7 +991,7 @@ template<bool bwd, typename T> void pass11 (size_t ido, size_t l1,
       }
       for (size_t i=1; i<ido; ++i)
         {
-        PREP11(i)
+        POCKETFFT_PREP11(i)
         PARTSTEP11(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
         PARTSTEP11(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
         PARTSTEP11(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
@@ -959,13 +1004,9 @@ template<bool bwd, typename T> void pass11 (size_t ido, size_t l1,
 #undef PARTSTEP11
 #undef PARTSTEP11a0
 #undef PARTSTEP11a
-#undef PREP11
+#undef POCKETFFT_PREP11
 
-#define CX(a,b,c) cc[(a)+ido*((b)+l1*(c))]
-#define CX2(a,b) cc[(a)+idl1*(b)]
-#define CH2(a,b) ch[(a)+idl1*(b)]
-
-template<bool bwd, typename T> void passg (size_t ido, size_t ip,
+template<bool fwd, typename T> void passg (size_t ido, size_t ip,
   size_t l1, T * RESTRICT cc, T * RESTRICT ch, const cmplx<T0> * RESTRICT wa,
   const cmplx<T0> * RESTRICT csarr)
   {
@@ -973,10 +1014,21 @@ template<bool bwd, typename T> void passg (size_t ido, size_t ip,
   size_t ipph = (ip+1)/2;
   size_t idl1 = ido*l1;
 
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto CX = [cc, ido, l1](size_t a, size_t b, size_t c) -> T&
+    { return cc[a+ido*(b+l1*c)]; };
+  auto CX2 = [cc, idl1](size_t a, size_t b) -> T&
+    { return cc[a+idl1*b]; };
+  auto CH2 = [ch, idl1](size_t a, size_t b) -> const T&
+    { return ch[a+idl1*b]; };
+
   arr<cmplx<T0>> wal(ip);
   wal[0] = cmplx<T0>(1., 0.);
   for (size_t i=1; i<ip; ++i)
-    wal[i]=cmplx<T0>(csarr[i].r,bwd ? csarr[i].i : -csarr[i].i);
+    wal[i]=cmplx<T0>(csarr[i].r,fwd ? -csarr[i].i : csarr[i].i);
 
   for (size_t k=0; k<l1; ++k)
     for (size_t i=0; i<ido; ++i)
@@ -1054,19 +1106,15 @@ template<bool bwd, typename T> void passg (size_t ido, size_t ip,
           T x1, x2;
           PMC(x1,x2,CX(i,k,j),CX(i,k,jc));
           size_t idij=(j-1)*(ido-1)+i-1;
-          CX(i,k,j) = x1.template special_mul<bwd>(wa[idij]);
+          CX(i,k,j) = x1.template special_mul<fwd>(wa[idij]);
           idij=(jc-1)*(ido-1)+i-1;
-          CX(i,k,jc) = x2.template special_mul<bwd>(wa[idij]);
+          CX(i,k,jc) = x2.template special_mul<fwd>(wa[idij]);
           }
         }
     }
   }
 
-#undef CH2
-#undef CX2
-#undef CX
-
-template<bool bwd, typename T> void pass_all(T c[], T0 fct)
+template<bool fwd, typename T> void pass_all(T c[], T0 fct)
   {
   if (length==1) { c[0]*=fct; return; }
   size_t l1=1;
@@ -1079,22 +1127,22 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
     size_t l2=ip*l1;
     size_t ido = length/l2;
     if     (ip==4)
-      pass4<bwd> (ido, l1, p1, p2, fact[k1].tw);
+      pass4<fwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==8)
-      pass8<bwd>(ido, l1, p1, p2, fact[k1].tw);
+      pass8<fwd>(ido, l1, p1, p2, fact[k1].tw);
     else if(ip==2)
-      pass2<bwd>(ido, l1, p1, p2, fact[k1].tw);
+      pass2<fwd>(ido, l1, p1, p2, fact[k1].tw);
     else if(ip==3)
-      pass3<bwd> (ido, l1, p1, p2, fact[k1].tw);
+      pass3<fwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==5)
-      pass5<bwd> (ido, l1, p1, p2, fact[k1].tw);
+      pass5<fwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==7)
-      pass7<bwd> (ido, l1, p1, p2, fact[k1].tw);
+      pass7<fwd> (ido, l1, p1, p2, fact[k1].tw);
     else if(ip==11)
-      pass11<bwd> (ido, l1, p1, p2, fact[k1].tw);
+      pass11<fwd> (ido, l1, p1, p2, fact[k1].tw);
     else
       {
-      passg<bwd>(ido, ip, l1, p1, p2, fact[k1].tw, fact[k1].tws);
+      passg<fwd>(ido, ip, l1, p1, p2, fact[k1].tw, fact[k1].tws);
       swap(p1,p2);
       }
     swap(p1,p2);
@@ -1114,16 +1162,12 @@ template<bool bwd, typename T> void pass_all(T c[], T0 fct)
         c[i] *= fct;
   }
 
-#undef WA
-#undef CC
-#undef CH
-
   public:
     template<typename T> void forward(T c[], T0 fct)
-      { pass_all<false>(c, fct); }
+      { pass_all<true>(c, fct); }
 
     template<typename T> void backward(T c[], T0 fct)
-      { pass_all<true>(c, fct); }
+      { pass_all<false>(c, fct); }
 
   private:
     NOINLINE void factorize()
@@ -1220,7 +1264,6 @@ template<typename T0> class rfftp
     void add_factor(size_t factor)
       { fact.push_back({factor, nullptr, nullptr}); }
 
-#define WA(x,i) wa[(i)+(x)*(ido-1)]
 template<typename T> inline void PM(T &a, T &b, T c, T d)
   { a=c+d; b=c-d; }
 
@@ -1229,13 +1272,16 @@ template<typename T1, typename T2, typename T3> inline void MULPM
   (T1 &a, T1 &b, T2 c, T2 d, T3 e, T3 f)
   {  a=c*e+d*f; b=c*f-d*e; }
 
-#define CC(a,b,c) cc[(a)+ido*((b)+l1*(c))]
-#define CH(a,b,c) ch[(a)+ido*((b)+cdim*(c))]
-
 template<typename T> void radf2 (size_t ido, size_t l1,
   const T * RESTRICT cc, T * RESTRICT ch, const T0 * RESTRICT wa)
   {
   constexpr size_t cdim=2;
+
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,l1](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+l1*c)]; };
+  auto CH = [ch,ido,cdim](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+cdim*c)]; };
 
   for (size_t k=0; k<l1; k++)
     PM (CH(0,0,k),CH(ido-1,1,k),CC(0,k,0),CC(0,k,1));
@@ -1258,7 +1304,7 @@ template<typename T> void radf2 (size_t ido, size_t l1,
   }
 
 // a2=a+b; b2=i*(b-a);
-#define REARRANGE(rx, ix, ry, iy) \
+#define POCKETFFT_REARRANGE(rx, ix, ry, iy) \
   {\
   auto t1=rx+ry, t2=ry-rx, t3=ix+iy, t4=ix-iy; \
   rx=t1; ix=t3; ry=t4; iy=t2; \
@@ -1269,6 +1315,12 @@ template<typename T> void radf3(size_t ido, size_t l1,
   {
   constexpr size_t cdim=3;
   constexpr T0 taur=-0.5, taui=T0(0.8660254037844386467637231707529362L);
+
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,l1](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+l1*c)]; };
+  auto CH = [ch,ido,cdim](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+cdim*c)]; };
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1285,7 +1337,7 @@ template<typename T> void radf3(size_t ido, size_t l1,
       T di2, di3, dr2, dr3;
       MULPM (dr2,di2,WA(0,i-2),WA(0,i-1),CC(i-1,k,1),CC(i,k,1)); // d2=conj(WA0)*CC1
       MULPM (dr3,di3,WA(1,i-2),WA(1,i-1),CC(i-1,k,2),CC(i,k,2)); // d3=conj(WA1)*CC2
-      REARRANGE(dr2, di2, dr3, di3);
+      POCKETFFT_REARRANGE(dr2, di2, dr3, di3);
       CH(i-1,0,k) = CC(i-1,k,0)+dr2; // c add
       CH(i  ,0,k) = CC(i  ,k,0)+di2;
       T tr2 = CC(i-1,k,0)+taur*dr2; // c add
@@ -1302,6 +1354,12 @@ template<typename T> void radf4(size_t ido, size_t l1,
   {
   constexpr size_t cdim=4;
   constexpr T0 hsqt2=T0(0.707106781186547524400844362104849L);
+
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,l1](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+l1*c)]; };
+  auto CH = [ch,ido,cdim](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+cdim*c)]; };
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1347,6 +1405,12 @@ template<typename T> void radf5(size_t ido, size_t l1,
                tr12= T0(-0.8090169943749474241022934171828191L),
                ti12= T0(0.5877852522924731291687059546390728L);
 
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,l1](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+l1*c)]; };
+  auto CH = [ch,ido,cdim](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+cdim*c)]; };
+
   for (size_t k=0; k<l1; k++)
     {
     T cr2, cr3, ci4, ci5;
@@ -1367,8 +1431,8 @@ template<typename T> void radf5(size_t ido, size_t l1,
       MULPM (dr3,di3,WA(1,i-2),WA(1,i-1),CC(i-1,k,2),CC(i,k,2));
       MULPM (dr4,di4,WA(2,i-2),WA(2,i-1),CC(i-1,k,3),CC(i,k,3));
       MULPM (dr5,di5,WA(3,i-2),WA(3,i-1),CC(i-1,k,4),CC(i,k,4));
-      REARRANGE(dr2, di2, dr5, di5);
-      REARRANGE(dr3, di3, dr4, di4);
+      POCKETFFT_REARRANGE(dr2, di2, dr5, di5);
+      POCKETFFT_REARRANGE(dr3, di3, dr4, di4);
       CH(i-1,0,k)=CC(i-1,k,0)+dr2+dr3;
       CH(i  ,0,k)=CC(i  ,k,0)+di2+di3;
       T tr2=CC(i-1,k,0)+tr11*dr2+tr12*dr3;
@@ -1386,13 +1450,8 @@ template<typename T> void radf5(size_t ido, size_t l1,
       }
   }
 
-#undef CC
-#undef CH
-#define C1(a,b,c) cc[(a)+ido*((b)+l1*(c))]
-#define C2(a,b) cc[(a)+idl1*(b)]
-#define CH2(a,b) ch[(a)+idl1*(b)]
-#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
-#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
+#undef POCKETFFT_REARRANGE
+
 template<typename T> void radfg(size_t ido, size_t ip, size_t l1,
   T * RESTRICT cc, T * RESTRICT ch, const T0 * RESTRICT wa,
   const T0 * RESTRICT csarr)
@@ -1400,6 +1459,17 @@ template<typename T> void radfg(size_t ido, size_t ip, size_t l1,
   const size_t cdim=ip;
   size_t ipph=(ip+1)/2;
   size_t idl1 = ido*l1;
+
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> const T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto C1 = [cc,ido,l1] (size_t a, size_t b, size_t c) -> T&
+    { return cc[a+ido*(b+l1*c)]; };
+  auto C2 = [cc,idl1] (size_t a, size_t b) -> T&
+    { return cc[a+idl1*b]; };
+  auto CH2 = [ch,idl1] (size_t a, size_t b) -> T&
+    { return ch[a+idl1*b]; };
 
   if (ido>1)
     {
@@ -1529,19 +1599,17 @@ template<typename T> void radfg(size_t ido, size_t ip, size_t l1,
         }
     }
   }
-#undef C1
-#undef C2
-#undef CH2
-
-#undef CH
-#undef CC
-#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
-#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
 
 template<typename T> void radb2(size_t ido, size_t l1, const T * RESTRICT cc,
   T * RESTRICT ch, const T0 * RESTRICT wa)
   {
   constexpr size_t cdim=2;
+
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
 
   for (size_t k=0; k<l1; k++)
     PM (CH(0,k,0),CH(0,k,1),CC(0,0,k),CC(ido-1,1,k));
@@ -1568,6 +1636,12 @@ template<typename T> void radb3(size_t ido, size_t l1,
   {
   constexpr size_t cdim=3;
   constexpr T0 taur=-0.5, taui=T0(0.8660254037844386467637231707529362L);
+
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1602,6 +1676,12 @@ template<typename T> void radb4(size_t ido, size_t l1,
   {
   constexpr size_t cdim=4;
   constexpr T0 sqrt2=T0(1.414213562373095048801688724209698L);
+
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
 
   for (size_t k=0; k<l1; k++)
     {
@@ -1652,6 +1732,12 @@ template<typename T> void radb5(size_t ido, size_t l1,
                tr12= T0(-0.8090169943749474241022934171828191L),
                ti12= T0(0.5877852522924731291687059546390728L);
 
+  auto WA = [wa,ido](size_t x, size_t i) { return wa[i+x*(ido-1)]; };
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+
   for (size_t k=0; k<l1; k++)
     {
     T ti5=CC(0,2,k)+CC(0,2,k);
@@ -1696,14 +1782,6 @@ template<typename T> void radb5(size_t ido, size_t l1,
       }
   }
 
-#undef CH
-#undef CC
-#define CC(a,b,c) cc[(a)+ido*((b)+cdim*(c))]
-#define CH(a,b,c) ch[(a)+ido*((b)+l1*(c))]
-#define C1(a,b,c) cc[(a)+ido*((b)+l1*(c))]
-#define C2(a,b) cc[(a)+idl1*(b)]
-#define CH2(a,b) ch[(a)+idl1*(b)]
-
 template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
   T * RESTRICT cc, T * RESTRICT ch, const T0 * RESTRICT wa,
   const T0 * RESTRICT csarr)
@@ -1711,6 +1789,17 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
   const size_t cdim=ip;
   size_t ipph=(ip+1)/ 2;
   size_t idl1 = ido*l1;
+
+  auto CC = [cc,ido,cdim](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+cdim*c)]; };
+  auto CH = [ch,ido,l1](size_t a, size_t b, size_t c) -> T&
+    { return ch[a+ido*(b+l1*c)]; };
+  auto C1 = [cc,ido,l1](size_t a, size_t b, size_t c) -> const T&
+    { return cc[a+ido*(b+l1*c)]; };
+  auto C2 = [cc,idl1](size_t a, size_t b) -> T&
+    { return cc[a+idl1*b]; };
+  auto CH2 = [ch,idl1](size_t a, size_t b) -> T&
+    { return ch[a+idl1*b]; };
 
   for (size_t k=0; k<l1; ++k)        // 102
     for (size_t i=0; i<ido; ++i)     // 101
@@ -1830,14 +1919,6 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
       }
     }
   }
-#undef C1
-#undef C2
-#undef CH2
-
-#undef CH
-#undef CC
-
-#undef WA
 
     template<typename T> void copy_and_norm(T *c, T *p1, size_t n, T0 fct)
       {
@@ -2007,28 +2088,29 @@ template<typename T0> class fftblue
     arr<cmplx<T0>> mem;
     cmplx<T0> *bk, *bkf;
 
-    template<bool bwd, typename T> void fft(cmplx<T> c[], T0 fct)
+    template<bool fwd, typename T> void fft(cmplx<T> c[], T0 fct)
       {
       arr<cmplx<T>> akf(n2);
 
       /* initialize a_k and FFT it */
       for (size_t m=0; m<n; ++m)
-        akf[m] = c[m].template special_mul<bwd>(bk[m]);
+        akf[m] = c[m].template special_mul<fwd>(bk[m]);
+      auto zero = akf[0]*T0(0);
       for (size_t m=n; m<n2; ++m)
-        akf[m]=akf[0]*T0(0);
+        akf[m]=zero;
 
       plan.forward (akf.data(),1.);
 
       /* do the convolution */
       for (size_t m=0; m<n2; ++m)
-        akf[m] = akf[m].template special_mul<!bwd>(bkf[m]);
+        akf[m] = akf[m].template special_mul<!fwd>(bkf[m]);
 
       /* inverse FFT */
       plan.backward (akf.data(),1.);
 
       /* multiply by b_k */
       for (size_t m=0; m<n; ++m)
-        c[m] = akf[m].template special_mul<bwd>(bk[m])*fct;
+        c[m] = akf[m].template special_mul<fwd>(bk[m])*fct;
       }
 
   public:
@@ -2060,10 +2142,10 @@ template<typename T0> class fftblue
       }
 
     template<typename T> void backward(cmplx<T> c[], T0 fct)
-      { fft<true>(c,fct); }
+      { fft<false>(c,fct); }
 
     template<typename T> void forward(cmplx<T> c[], T0 fct)
-      { fft<false>(c,fct); }
+      { fft<true>(c,fct); }
 
     template<typename T> void backward_r(T c[], T0 fct)
       {
@@ -2074,7 +2156,7 @@ template<typename T0> class fftblue
       if ((n&1)==0) tmp[n/2].i=T0(0)*c[0];
       for (size_t m=1; 2*m<n; ++m)
         tmp[n-m].Set(tmp[m].r, -tmp[m].i);
-      fft<true>(tmp.data(),fct);
+      fft<false>(tmp.data(),fct);
       for (size_t m=0; m<n; ++m)
         c[m] = tmp[m].r;
       }
@@ -2082,9 +2164,10 @@ template<typename T0> class fftblue
     template<typename T> void forward_r(T c[], T0 fct)
       {
       arr<cmplx<T>> tmp(n);
+      auto zero = T0(0)*c[0];
       for (size_t m=0; m<n; ++m)
-        tmp[m].Set(c[m], T0(0)*c[m]);
-      fft<false>(tmp.data(),fct);
+        tmp[m].Set(c[m], zero);
+      fft<true>(tmp.data(),fct);
       c[0] = tmp[0].r;
       memcpy (c+1, tmp.data()+1, (n-1)*sizeof(T));
       }
@@ -2708,7 +2791,7 @@ template<typename T> NOINLINE void general_c2r(
     if (forward)
       for (; i<len-1; i+=2, ++ii)
         {
-        tdata[i  ] = in[it.iofs(ii)].r;
+        tdata[i  ] =  in[it.iofs(ii)].r;
         tdata[i+1] = -in[it.iofs(ii)].i;
         }
     else
@@ -2896,7 +2979,8 @@ template<typename T> void c2r(const shape_t &shape_out,
   stride_t stride_inter(shape_in.size());
   stride_inter.back() = sizeof(cmplx<T>);
   for (int i=int(shape_in.size())-2; i>=0; --i)
-    stride_inter[size_t(i)] = stride_inter[size_t(i+1)]*ptrdiff_t(shape_in[size_t(i+1)]);
+    stride_inter[size_t(i)] =
+      stride_inter[size_t(i+1)]*ptrdiff_t(shape_in[size_t(i+1)]);
   arr<complex<T>> tmp(nval);
   auto newaxes = shape_t({axes.begin(), --axes.end()});
   c2c(shape_in, stride_in, stride_inter, newaxes, forward, data_in, tmp.data(),
