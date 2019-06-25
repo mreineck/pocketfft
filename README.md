@@ -62,6 +62,23 @@ is performed, where `n2` is chosen to be highly composite.
 [4] https://stackoverflow.com/questions/42792939/
 
 
+Configuration options
+=====================
+
+Since this is a header-only library, it can only be configured via preprocessor
+macros.
+
+POCKETFFT_OPENMP: if defined, enable OpenMP support
+default: undefined
+
+POCKETFFT_CACHE_SIZE: if 0, disable all caching of FFT plans, else use an
+LRU cache with the requested size. If undefined, assume a cache size of 16.
+default: undefined
+
+POCKETFFT_NO_VECTORS: if defined, disable all support for CPU vector
+instructions.
+default: undefined
+
 
 Programming interface
 =====================
@@ -166,13 +183,13 @@ template<typename T> void c2r(const shape_t &shape_out,
   size_t nthreads=1)
 
 /* This function carries out a FFTPACK-style real-to-halfcomplex or
-   halfcomplex-to-real transform (depending on the parameter `r2hc`) on all
-   specified axes in the given order.
+   halfcomplex-to-real transform (depending on the parameter `real2hermitian`)
+   on all specified axes in the given order.
    NOTE: interpreting the result of this function can be complicated when
    transforming more than one axis! */
 template<typename T> void r2r_fftpack(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
-  bool r2hc, bool forward, const T *data_in, T *data_out, T fct,
+  bool real2hermitian, bool forward, const T *data_in, T *data_out, T fct,
   size_t nthreads=1)
 
 /* For every requested axis, this function carries out a forward Fourier
