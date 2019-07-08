@@ -121,7 +121,7 @@ Arguments
 
  - `nthreads` is a nonnegative integer specifying the number of threads to use
    for the operation. A value of 0 means that the default number of threads
-   (typically governed by the environment variable `OMP_NUM_THREADS` will be
+   (typically governed by the environment variable `OMP_NUM_THREADS`) will be
    used.
    This value is only a recommendation. If `pocketfft` is compiled without
    OpenMP support, it will be silently ignored. For one-dimensional transforms,
@@ -139,6 +139,10 @@ General constraints on arguments
  - Strides are measured in bytes, to allow maximum flexibility. Negative strides
    are fine. Strides that lead to multiple accesses of the same memory address
    are not allowed.
+ - All memory addresses resulting from a combination of data pointers and
+   strides must have sufficient alignment. On x86 CPUs, badly aligned adresses
+   will only lead to slower execution, but on some other hardware, misaligned
+   memory accesses will cause a crash.
  - The same axis must not be specified more than once in an `axes` argument.
  - For `r2c` and `c2r` transforms: the length of the complex array along `axis`
    (or the last entry in `axes`) is assumed to be `s/2 + 1`, where `s` is the
