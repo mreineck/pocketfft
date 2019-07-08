@@ -232,14 +232,7 @@ template<bool fwd, typename T> void ROTX90(cmplx<T> &a)
 template<typename T> class sincos_2pibyn
   {
   private:
-    template<typename Ta, typename Tb, bool bigger> struct TypeSelector
-      {};
-    template<typename Ta, typename Tb> struct TypeSelector<Ta, Tb, true>
-      { using type = Ta; };
-    template<typename Ta, typename Tb> struct TypeSelector<Ta, Tb, false>
-      { using type = Tb; };
-
-    using Thigh = typename TypeSelector<T, double, (sizeof(T)>sizeof(double))>::type;
+    using Thigh = typename conditional<(sizeof(T)>sizeof(double)), T, double>::type;
     arr<T> data;
 
     void my_sincosm1pi (Thigh a_, Thigh *POCKETFFT_RESTRICT res)
