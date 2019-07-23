@@ -14,6 +14,7 @@ advantages:
   real-to-complex) FFTs. For half-complex transforms, several conventions for
   representing the complex-valued side are supported (reduced-size complex
   array, FFTPACK-style half-complex format and Hartley transform).
+- Support discrete cosine and sine transforms (Types I-IV)
 - Makes use of CPU vector instructions when performing 2D and higher-dimensional
   transforms, if they are available.
 - Has a small internal cache for transform plans, which speeds up repeated
@@ -203,4 +204,28 @@ template<typename T> void r2r_fftpack(const shape_t &shape,
 template<typename T> void r2r_separable_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const T *data_in, T *data_out, T fct, size_t nthreads=1);
+
+/* if ortho==true, the transform is made orthogonal by these additional steps
+   in every 1D sub-transform:
+   Type 1 : multiply first and last input value by sqrt(2)
+            divide first and last output value by sqrt(2)
+   Type 2 : divide first output value by sqrt(2)
+   Type 3 : multiply first input value by sqrt(2)
+   Type 4 : nothing */
+template<typename T> void dct(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  int type, const T *data_in, T *data_out, T fct, bool ortho,
+  size_t nthreads=1);
+
+/* if ortho==true, the transform is made orthogonal by these additional steps
+   in every 1D sub-transform:
+   Type 1 : nothing
+   Type 2 : divide first output value by sqrt(2)
+   Type 3 : multiply first input value by sqrt(2)
+   Type 4 : nothing */
+template<typename T> void dst(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  int type, const T *data_in, T *data_out, T fct, bool ortho,
+  size_t nthreads=1);
+  {
 ```
