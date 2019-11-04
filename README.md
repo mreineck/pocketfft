@@ -76,7 +76,8 @@ POCKETFFT_NO_VECTORS:\
 if defined, disable all support for CPU vector instructions.\
 Default: undefined
 
-POCKETFFT_NO_MULTITHREADING:\ if defined, multi-threading will be disabled.\
+POCKETFFT_NO_MULTITHREADING:\
+if defined, multi-threading will be disabled.\
 Default: undefined
 
 
