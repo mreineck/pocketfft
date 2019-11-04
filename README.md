@@ -14,12 +14,12 @@ advantages:
   real-to-complex) FFTs. For half-complex transforms, several conventions for
   representing the complex-valued side are supported (reduced-size complex
   array, FFTPACK-style half-complex format and Hartley transform).
-- Support discrete cosine and sine transforms (Types I-IV)
+- Supports discrete cosine and sine transforms (Types I-IV)
 - Makes use of CPU vector instructions when performing 2D and higher-dimensional
   transforms, if they are available.
 - Has a small internal cache for transform plans, which speeds up repeated
   transforms of the same length (most significant for 1D transforms).
-- Has optional OpenMP support for multidimensional transforms
+- Has optional multi-threading support for multidimensional transforms
 
 
 License
@@ -43,7 +43,7 @@ Twiddle factor computation:
 
 Efficient codelets are available for the factors:
 
-- 2, 3, 4, 5, 7, 11 for complex-valued FFTs
+- 2, 3, 4, 5, 7, 8, 11 for complex-valued FFTs
 - 2, 3, 4, 5 for real-valued FFTs
 
 Larger prime factors are handled by somewhat less efficient, generic routines.
@@ -69,15 +69,15 @@ Configuration options
 Since this is a header-only library, it can only be configured via preprocessor
 macros.
 
-POCKETFFT_OPENMP: if defined, enable OpenMP support
-default: undefined
-
 POCKETFFT_CACHE_SIZE: if 0, disable all caching of FFT plans, else use an
 LRU cache with the requested size. If undefined, assume a cache size of 16.
 default: undefined
 
 POCKETFFT_NO_VECTORS: if defined, disable all support for CPU vector
 instructions.
+default: undefined
+
+POCKETFFT_NO_MULTITHREADING: if defined, multi-threading will be disabled
 default: undefined
 
 
@@ -121,12 +121,11 @@ Arguments
    and output data arrays.
 
  - `nthreads` is a nonnegative integer specifying the number of threads to use
-   for the operation. A value of 0 means that the default number of threads
-   (typically governed by the environment variable `OMP_NUM_THREADS`) will be
-   used.
+   for the operation. A value of 0 means that the number of logical CPU cores
+   will be used.
    This value is only a recommendation. If `pocketfft` is compiled without
-   OpenMP support, it will be silently ignored. For one-dimensional transforms,
-   multi-threading is disabled as well.
+   multi-threading support, it will be silently ignored. For one-dimensional
+   transforms, multi-threading is disabled as well.
 
 General constraints on arguments
 --------------------------------
