@@ -35,9 +35,7 @@ Twiddle factor computation:
 
 - making use of symmetries to reduce number of sin/cos evaluations
 - all angles are reduced to the range `[0; pi/4]` for higher accuracy
-- an adapted implementation of `sincospi()` [4] is used, which actually computes
-  `sin(x)` and `(cos(x)-1)`.
-- if `n` sin/cos pairs are required, the adjusted `sincospi()` is only called
+- if `n` sin/cos pairs are required, the trogonometric functions are only called
   `2*sqrt(n)` times; the remaining values are obtained by evaluating the
   angle addition theorems in a numerically accurate way.
 
@@ -69,16 +67,17 @@ Configuration options
 Since this is a header-only library, it can only be configured via preprocessor
 macros.
 
-POCKETFFT_CACHE_SIZE: if 0, disable all caching of FFT plans, else use an
-LRU cache with the requested size. If undefined, assume a cache size of 16.
-default: undefined
+POCKETFFT_CACHE_SIZE:\
+if 0, disable all caching of FFT plans, else use an LRU cache with the
+requested size. If undefined, assume a cache size of 16.\
+Default: undefined
 
-POCKETFFT_NO_VECTORS: if defined, disable all support for CPU vector
-instructions.
-default: undefined
+POCKETFFT_NO_VECTORS:\
+if defined, disable all support for CPU vector instructions.\
+Default: undefined
 
-POCKETFFT_NO_MULTITHREADING: if defined, multi-threading will be disabled
-default: undefined
+POCKETFFT_NO_MULTITHREADING:\ if defined, multi-threading will be disabled.\
+Default: undefined
 
 
 Programming interface
@@ -147,6 +146,9 @@ General constraints on arguments
  - For `r2c` and `c2r` transforms: the length of the complex array along `axis`
    (or the last entry in `axes`) is assumed to be `s/2 + 1`, where `s` is the
    length of the corresponding axis of the real array.
+
+Detailed public interface
+-------------------------
 
 ```
 using shape_t = std::vector<std::size_t>;
@@ -226,5 +228,4 @@ template<typename T> void dst(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   int type, const T *data_in, T *data_out, T fct, bool ortho,
   size_t nthreads=1);
-  {
 ```
