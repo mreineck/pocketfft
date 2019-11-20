@@ -3387,6 +3387,33 @@ template<typename T> void r2r_separable_hartley(const shape_t &shape,
     false);
   }
 
+template<typename T> void r2r_genuine_hartley(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const T *data_in, T *data_out, T fct, size_t nthreads=1)
+  {
+  if (util::prod(shape)==0) return;
+  util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
+  shape_t tshp(shape);
+  tshp[axes.back()] = tshp[axes.back()]/2+1;
+  arr<complex<T>> tdata(util::prod(tshp));
+  stride_t tstride(shape.size());
+  tstride.back()=sizeof(complex<T>);
+  for (size_t i=tstride.size()-1; i>0; --i)
+    tstride[i-1]=tstride[i]*ptrdiff_t(tshp[i]);
+  r2c(shape, stride_in, tstride, axes, true, data_in, tdata.data(), fct, nthreads);
+  cndarr<cmplx<T>> atmp(tdata.data(), tshp, tstride);
+  ndarr<T> aout(data_out, shape, stride_out);
+  simple_iter iin(atmp);
+  rev_iter iout(aout, axes);
+  while(iin.remaining()>0)
+    {
+    auto v = atmp[iin.ofs()];
+    aout[iout.ofs()] = v.r+v.i;
+    aout[iout.rev_ofs()] = v.r-v.i;
+    iin.advance(); iout.advance();
+    }
+  }
+
 } // namespace detail
 
 using detail::FORWARD;
@@ -3398,6 +3425,7 @@ using detail::c2r;
 using detail::r2c;
 using detail::r2r_fftpack;
 using detail::r2r_separable_hartley;
+using detail::r2r_genuine_hartley;
 using detail::dct;
 using detail::dst;
 

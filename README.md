@@ -58,8 +58,6 @@ is performed, where `n2` is chosen to be highly composite.
 
 [3] https://en.wikipedia.org/wiki/Chirp_Z-transform
 
-[4] https://stackoverflow.com/questions/42792939/
-
 
 Configuration options
 =====================
@@ -204,6 +202,18 @@ template<typename T> void r2r_fftpack(const shape_t &shape,
    the next axis is processed.
    This is analogous to FFTW's implementation of the Hartley transform. */
 template<typename T> void r2r_separable_hartley(const shape_t &shape,
+  const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
+  const T *data_in, T *data_out, T fct, size_t nthreads=1);
+
+/* This function carries out a full Fourier transform over the requested axes,
+   and the sum of real and imaginary parts of the result is stored in the output
+   array. For a single transformed axis, this is identical to
+   `r2r_separable_hartley`, but when transforming multiple axes, the results
+   are different.
+
+   NOTE: This function allocates temporary working space with a size
+   comparable to the input array. */
+template<typename T> void r2r_genuine_hartley(const shape_t &shape,
   const stride_t &stride_in, const stride_t &stride_out, const shape_t &axes,
   const T *data_in, T *data_out, T fct, size_t nthreads=1);
 
