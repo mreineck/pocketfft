@@ -105,7 +105,7 @@ constexpr bool FORWARD  = true,
 #if defined(__INTEL_COMPILER)
 // do nothing. This is necessary because this compiler also sets __GNUC__.
 #elif defined(__clang__)
-#if __clang__>=5
+#if __clang_major__>=5
 #undef POCKETFFT_NO_VECTORS
 #endif
 #elif defined(__GNUC__)
@@ -3392,6 +3392,9 @@ template<typename T> void r2r_genuine_hartley(const shape_t &shape,
   const T *data_in, T *data_out, T fct, size_t nthreads=1)
   {
   if (util::prod(shape)==0) return;
+  if (axes.size()==1)
+    return r2r_separable_hartley(shape, stride_in, stride_out, axes, data_in,
+      data_out, fct, nthreads);
   util::sanity_check(shape, stride_in, stride_out, data_in==data_out, axes);
   shape_t tshp(shape);
   tshp[axes.back()] = tshp[axes.back()]/2+1;
