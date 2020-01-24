@@ -648,7 +648,7 @@ class thread_pool
       }
   };
 
-thread_pool & get_pool()
+inline thread_pool & get_pool()
   {
   static thread_pool pool;
 #ifdef POCKETFFT_PTHREADS
@@ -3382,7 +3382,7 @@ template<typename T> void c2r(const shape_t &shape_out,
     stride_inter[size_t(i)] =
       stride_inter[size_t(i+1)]*ptrdiff_t(shape_in[size_t(i+1)]);
   arr<std::complex<T>> tmp(nval);
-  auto newaxes = shape_t({axes.begin(), --axes.end()});
+  auto newaxes = shape_t{axes.begin(), --axes.end()};
   c2c(shape_in, stride_in, stride_inter, newaxes, forward, data_in, tmp.data(),
     T(1), nthreads);
   c2r(shape_out, stride_inter, stride_out, axes.back(), forward,
