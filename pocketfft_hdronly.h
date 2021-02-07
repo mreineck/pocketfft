@@ -48,7 +48,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #ifndef POCKETFFT_CACHE_SIZE
-#define POCKETFFT_CACHE_SIZE 16
+#define POCKETFFT_CACHE_SIZE 0
 #endif
 
 #include <cmath>
@@ -1302,9 +1302,9 @@ template<bool fwd, typename T> void pass11 (size_t ido, size_t l1,
       }
   }
 
-#undef PARTSTEP11
-#undef PARTSTEP11a0
-#undef PARTSTEP11a
+#undef POCKETFFT_PARTSTEP11
+#undef POCKETFFT_PARTSTEP11a0
+#undef POCKETFFT_PARTSTEP11a
 #undef POCKETFFT_PREP11
 
 template<bool fwd, typename T> void passg (size_t ido, size_t ip,

@@ -67,7 +67,11 @@ macros.
 
 POCKETFFT_CACHE_SIZE:\
 if 0, disable all caching of FFT plans, else use an LRU cache with the
-requested size. If undefined, assume a cache size of 16.\
+requested size. If undefined, assume a cache size of 0.\
+NOTE: caching is disabled by default because its benefits are only really
+noticeable for short 1D transforms. When using caching with transforms that
+have very large axis lengths, it may use up a lot of memory, so only switch this
+on if you know you really need it!
 Default: undefined
 
 POCKETFFT_NO_VECTORS:\
