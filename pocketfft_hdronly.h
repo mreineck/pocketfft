@@ -1456,7 +1456,7 @@ template<bool fwd, typename T> void pass_all(T c[], T0 fct) const
       for (size_t i=0; i<length; ++i)
         c[i] = ch[i]*fct;
     else
-      std::copy (p1, p1+length, c);
+      std::copy_n (p1, length, c);
     }
   else
     if (fct!=1.)
@@ -2204,19 +2204,19 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
     }
   }
 
-    template<typename T> void copy_and_norm(T *c, T *p1, size_t n, T0 fct) const
+    template<typename T> void copy_and_norm(T *c, T *p1, T0 fct) const
       {
       if (p1!=c)
         {
         if (fct!=1.)
-          for (size_t i=0; i<n; ++i)
+          for (size_t i=0; i<length; ++i)
             c[i] = fct*p1[i];
         else
-          std::copy (p1, p1+length, c);
+          std::copy_n (p1, length, c);
         }
       else
         if (fct!=1.)
-          for (size_t i=0; i<n; ++i)
+          for (size_t i=0; i<length; ++i)
             c[i] *= fct;
       }
 
@@ -2224,16 +2224,16 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
     template<typename T> void exec(T c[], T0 fct, bool r2hc) const
       {
       if (length==1) { c[0]*=fct; return; }
-      size_t n=length, nf=fact.size();
-      arr<T> ch(n);
+      size_t nf=fact.size();
+      arr<T> ch(length);
       T *p1=c, *p2=ch.data();
 
       if (r2hc)
-        for(size_t k1=0, l1=n; k1<nf;++k1)
+        for(size_t k1=0, l1=length; k1<nf;++k1)
           {
           size_t k=nf-k1-1;
           size_t ip=fact[k].fct;
-          size_t ido=n / l1;
+          size_t ido=length / l1;
           l1 /= ip;
           if(ip==4)
             radf4(ido, l1, p1, p2, fact[k].tw);
@@ -2251,7 +2251,7 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
         for(size_t k=0, l1=1; k<nf; k++)
           {
           size_t ip = fact[k].fct,
-                 ido= n/(ip*l1);
+                 ido= length/(ip*l1);
           if(ip==4)
             radb4(ido, l1, p1, p2, fact[k].tw);
           else if(ip==2)
@@ -2266,7 +2266,7 @@ template<typename T> void radbg(size_t ido, size_t ip, size_t l1,
           l1*=ip;
           }
 
-      copy_and_norm(c,p1,n,fct);
+      copy_and_norm(c,p1,fct);
       }
 
   private:
@@ -2437,12 +2437,12 @@ template<typename T0> class fftblue
           tmp[m].Set(c[m], zero);
         fft<true>(tmp.data(),fct);
         c[0] = tmp[0].r;
-        std::copy (&tmp[1].r, &tmp[1].r+n-1, &c[1]);
+        std::copy_n (&tmp[1].r, n-1, &c[1]);
         }
       else
         {
         tmp[0].Set(c[0],c[0]*0);
-        std::copy (c+1, c+n, &tmp[1].r);
+        std::copy_n (c+1, n-1, &tmp[1].r);
         if ((n&1)==0) tmp[n/2].i=T0(0)*c[0];
         for (size_t m=1; 2*m<n; ++m)
           tmp[n-m].Set(tmp[m].r, -tmp[m].i);
