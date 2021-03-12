@@ -2437,7 +2437,7 @@ template<typename T0> class fftblue
           tmp[m].Set(c[m], zero);
         fft<true>(tmp.data(),fct);
         c[0] = tmp[0].r;
-        std::copy (&tmp[1].r, &tmp[1].r+n-1, &c[1], tmp.data()+1);
+        std::copy (&tmp[1].r, &tmp[1].r+n-1, &c[1]);
         }
       else
         {
