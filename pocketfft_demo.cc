@@ -7,10 +7,18 @@
 using namespace std;
 using namespace pocketfft;
 
+// floating point RNG which is good enough for sinmple demos
+// Do not use for anything important!
+inline double simple_drand()
+  {
+  constexpr double norm = 1./RAND_MAX;
+  return rand()*norm;
+  }
+
 template<typename T> void crand(vector<complex<T>> &v)
   {
   for (auto & i:v)
-    i = complex<T>(drand48()-0.5, drand48()-0.5);
+    i = complex<T>(simple_drand()-0.5, simple_drand()-0.5);
   }
 
 template<typename T1, typename T2> long double l2err
