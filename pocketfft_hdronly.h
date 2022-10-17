@@ -1,7 +1,7 @@
 /*
 This file is part of pocketfft.
 
-Copyright (C) 2010-2021 Max-Planck-Society
+Copyright (C) 2010-2022 Max-Planck-Society
 Copyright (C) 2019-2020 Peter Bell
 
 For the odd-sized DCT-IV transforms:
@@ -149,7 +149,12 @@ template<> struct VLEN<double> { static constexpr size_t val=2; };
 #endif
 #endif
 
-#if __cplusplus >= 201703L
+// the __MINGW32__ part in the conditional below works around the problem that
+// the standard C++ library on Windows does not provide aligned_alloc() even
+// though the MinGW compiler advertises C++17 compliance.
+// MSVC does not trigger this problem, since it apparently always sets
+// __cplusplus to 199711L ...
+#if (__cplusplus >= 201703L) && (!defined(__MINGW32__))
 inline void *aligned_alloc(size_t align, size_t size)
   {
   // aligned_alloc() requires that the requested size is a multiple of "align"
