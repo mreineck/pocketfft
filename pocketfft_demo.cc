@@ -7,7 +7,7 @@
 using namespace std;
 using namespace pocketfft;
 
-// floating point RNG which is good enough for sinmple demos
+// floating point RNG which is good enough for simple demos
 // Do not use for anything important!
 inline double simple_drand()
   {
