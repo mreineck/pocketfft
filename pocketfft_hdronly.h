@@ -454,6 +454,66 @@ struct util // hack to avoid duplicate symbols
     return bestfac;
     }
 
+  /* returns the largest composite of 2, 3, 5, 7 and 11 which is <= n */
+  static POCKETFFT_NOINLINE size_t prev_good_size_cmplx(size_t n)
+  {
+    if (n<=12) return n;
+
+    size_t bestfound = 1;
+    size_t f11 = 1;
+    while (f11 <= n)
+    {
+      size_t f117 = f11;
+      while (f117 <= n)
+      {
+        size_t f1175 = f117;
+        while (f1175 <= n)
+        {
+          // Instead of searching all combinations of 2 and 3
+          // we search in a stair-step pattern where we either divide by 2 or multiply by 3.
+          // This reduces search space from O(f2max * f3max) to O(f2max + f3max)
+          size_t x = f1175;
+          while (x*2 <= n) x *= 2;
+          if (x > bestfound) bestfound = x;
+          while (x <= n && x&1==0)
+          {
+            (x*3 <= n) ? (x *= 3) : (x /= 2);
+            if (x > bestfound) bestfound = x;
+          }
+          f1175 *= 5;
+        }
+        f117 *= 7;
+      }
+      f11 *= 11;
+    }
+    return bestfound;
+  }
+
+  /* returns the largest composite of 2, 3, 5 which is <= n */
+  static POCKETFFT_NOINLINE size_t prev_good_size_real(size_t n)
+  {
+    if (n<=6) return n;
+
+    size_t bestfound = 1;
+    size_t f5 = 1;
+    while (f5 <= n)
+    {
+      // Instead of searching all combinations of 2 and 3
+      // we search in a stair-step pattern where we either divide by 2 or multiply by 3.
+      // This reduces search space from O(f2max * f3max) to O(f2max + f3max)
+      size_t x = f5;
+      while (x*2 <= n) x *= 2;
+      if (x > bestfound) bestfound = x;
+      while (x <= n && x&1==0)
+      {
+        (x*3 <= n) ? (x *= 3) : (x /= 2);
+        if (x > bestfound) bestfound = x;
+      }
+      f5 *= 5;
+    }
+    return bestfound;
+  }
+
   static size_t prod(const shape_t &shape)
     {
     size_t res=1;
