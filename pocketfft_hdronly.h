@@ -469,17 +469,17 @@ struct util // hack to avoid duplicate symbols
         size_t f1175 = f117;
         while (f1175 <= n)
         {
-          // Instead of searching all combinations of 2 and 3
-          // we search in a stair-step pattern where we either divide by 2 or multiply by 3.
-          // This reduces search space from O(f2max * f3max) to O(f2max + f3max)
           size_t x = f1175;
           while (x*2 <= n) x *= 2;
           if (x > bestfound) bestfound = x;
-          while (x <= n && x&1==0)
-          {
-            (x*3 <= n) ? (x *= 3) : (x /= 2);
-            if (x > bestfound) bestfound = x;
-          }
+            while (true) 
+            {
+              if (x * 3 <= n) x *= 3;
+              else if (x % 2 == 0) x /= 2;
+              else break;
+                
+              if (x > bestfound) bestfound = x;
+            }
           f1175 *= 5;
         }
         f117 *= 7;
@@ -498,17 +498,17 @@ struct util // hack to avoid duplicate symbols
     size_t f5 = 1;
     while (f5 <= n)
     {
-      // Instead of searching all combinations of 2 and 3
-      // we search in a stair-step pattern where we either divide by 2 or multiply by 3.
-      // This reduces search space from O(f2max * f3max) to O(f2max + f3max)
       size_t x = f5;
       while (x*2 <= n) x *= 2;
       if (x > bestfound) bestfound = x;
-      while (x <= n && x&1==0)
-      {
-        (x*3 <= n) ? (x *= 3) : (x /= 2);
-        if (x > bestfound) bestfound = x;
-      }
+	  while (true) 
+	  {
+	    if (x * 3 <= n) x *= 3;
+	    else if (x % 2 == 0) x /= 2;
+	    else break;
+	  
+	    if (x > bestfound) bestfound = x;
+	  }
       f5 *= 5;
     }
     return bestfound;
