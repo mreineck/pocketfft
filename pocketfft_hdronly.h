@@ -460,14 +460,9 @@ struct util // hack to avoid duplicate symbols
     if (n<=12) return n;
 
     size_t bestfound = 1;
-    size_t f11 = 1;
-    while (f11 <= n)
-    {
-      size_t f117 = f11;
-      while (f117 <= n)
-      {
-        size_t f1175 = f117;
-        while (f1175 <= n)
+	for (size_t f11 = 1;f11 <= n; f11 *= 11)
+      for (size_t f117 = f11; f117 <= n; f117 *= 7)
+        for (size_t f1175 = f117; f1175 <= n; f1175 *= 5)
         {
           size_t x = f1175;
           while (x*2 <= n) x *= 2;
@@ -480,12 +475,7 @@ struct util // hack to avoid duplicate symbols
               
             if (x > bestfound) bestfound = x;
           }
-          f1175 *= 5;
         }
-        f117 *= 7;
-      }
-      f11 *= 11;
-    }
     return bestfound;
   }
 
@@ -495,8 +485,7 @@ struct util // hack to avoid duplicate symbols
     if (n<=6) return n;
 
     size_t bestfound = 1;
-    size_t f5 = 1;
-    while (f5 <= n)
+    for (size_t f5 = 1; f5 <= n; f5 *= 5)
     {
       size_t x = f5;
       while (x*2 <= n) x *= 2;
@@ -509,7 +498,6 @@ struct util // hack to avoid duplicate symbols
       
         if (x > bestfound) bestfound = x;
       }
-      f5 *= 5;
     }
     return bestfound;
   }
