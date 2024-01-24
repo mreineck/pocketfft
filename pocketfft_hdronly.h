@@ -10,7 +10,7 @@ For the odd-sized DCT-IV transforms:
   
 For the prev_good_size search:
   Copyright (C) 2024 Tan Ping Liang, Peter Bell
-	
+
 Authors: Martin Reinecke, Peter Bell
 
 All rights reserved.
@@ -463,7 +463,7 @@ struct util // hack to avoid duplicate symbols
     if (n<=12) return n;
 
     size_t bestfound = 1;
-	for (size_t f11 = 1;f11 <= n; f11 *= 11)
+    for (size_t f11 = 1;f11 <= n; f11 *= 11)
       for (size_t f117 = f11; f117 <= n; f117 *= 7)
         for (size_t f1175 = f117; f1175 <= n; f1175 *= 5)
         {
