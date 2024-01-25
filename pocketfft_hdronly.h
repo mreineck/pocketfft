@@ -7,6 +7,9 @@ Copyright (C) 2019-2020 Peter Bell
 For the odd-sized DCT-IV transforms:
   Copyright (C) 2003, 2007-14 Matteo Frigo
   Copyright (C) 2003, 2007-14 Massachusetts Institute of Technology
+  
+For the prev_good_size search:
+  Copyright (C) 2024 Tan Ping Liang, Peter Bell
 
 Authors: Martin Reinecke, Peter Bell
 
@@ -453,6 +456,54 @@ struct util // hack to avoid duplicate symbols
       }
     return bestfac;
     }
+
+  /* returns the largest composite of 2, 3, 5, 7 and 11 which is <= n */
+  static POCKETFFT_NOINLINE size_t prev_good_size_cmplx(size_t n)
+  {
+    if (n<=12) return n;
+
+    size_t bestfound = 1;
+    for (size_t f11 = 1;f11 <= n; f11 *= 11)
+      for (size_t f117 = f11; f117 <= n; f117 *= 7)
+        for (size_t f1175 = f117; f1175 <= n; f1175 *= 5)
+        {
+          size_t x = f1175;
+          while (x*2 <= n) x *= 2;
+          if (x > bestfound) bestfound = x;
+          while (true) 
+          {
+            if (x * 3 <= n) x *= 3;
+            else if (x % 2 == 0) x /= 2;
+            else break;
+              
+            if (x > bestfound) bestfound = x;
+          }
+        }
+    return bestfound;
+  }
+
+  /* returns the largest composite of 2, 3, 5 which is <= n */
+  static POCKETFFT_NOINLINE size_t prev_good_size_real(size_t n)
+  {
+    if (n<=6) return n;
+
+    size_t bestfound = 1;
+    for (size_t f5 = 1; f5 <= n; f5 *= 5)
+    {
+      size_t x = f5;
+      while (x*2 <= n) x *= 2;
+      if (x > bestfound) bestfound = x;
+      while (true) 
+      {
+        if (x * 3 <= n) x *= 3;
+        else if (x % 2 == 0) x /= 2;
+        else break;
+      
+        if (x > bestfound) bestfound = x;
+      }
+    }
+    return bestfound;
+  }
 
   static size_t prod(const shape_t &shape)
     {
