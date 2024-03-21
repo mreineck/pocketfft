@@ -153,7 +153,7 @@ template<> struct VLEN<double> { static constexpr size_t val=2; };
 // the standard C++ library on Windows does not provide aligned_alloc() even
 // though the MinGW compiler and MSVC may advertise C++17 compliance.
 // aligned_alloc is only supported from MacOS 10.15.
-#if (__cplusplus >= 201703L) && (!defined(__MINGW32__)) && (!defined(_MSC_VER)) && (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_15)
+#if (__cplusplus >= 201703L) && (!defined(__MINGW32__)) && (!defined(_MSC_VER)) && (__MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_15)
 inline void *aligned_alloc(size_t align, size_t size)
   {
   // aligned_alloc() requires that the requested size is a multiple of "align"
