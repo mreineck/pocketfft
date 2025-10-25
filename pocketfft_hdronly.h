@@ -850,12 +850,12 @@ class thread_pool
         {
         try
           {
-          auto *worker = &workers_[i];
-          worker->busy_flag.clear();
-          worker->work = nullptr;
-          worker->thread = std::thread([worker, this]
+          auto *worker_i = &workers_[i];
+          worker_i->busy_flag.clear();
+          worker_i->work = nullptr;
+          worker_i->thread = std::thread([worker_i, this]
             {
-            worker->worker_main(shutdown_, unscheduled_tasks_, overflow_work_);
+            worker_i->worker_main(shutdown_, unscheduled_tasks_, overflow_work_);
             });
           }
         catch (...)
@@ -869,12 +869,12 @@ class thread_pool
     void shutdown_locked()
       {
       shutdown_ = true;
-      for (auto &worker : workers_)
-        worker.work_ready.notify_all();
+      for (auto &worker_i : workers_)
+        worker_i.work_ready.notify_all();
 
-      for (auto &worker : workers_)
-        if (worker.thread.joinable())
-          worker.thread.join();
+      for (auto &worker_i : workers_)
+        if (worker_i.thread.joinable())
+          worker_i.thread.join();
       }
 
   public:
@@ -895,15 +895,15 @@ class thread_pool
       ++unscheduled_tasks_;
 
       // First check for any idle workers and wake those
-      for (auto &worker : workers_)
-        if (!worker.busy_flag.test_and_set())
+      for (auto &worker_i : workers_)
+        if (!worker_i.busy_flag.test_and_set())
           {
           --unscheduled_tasks_;
           {
-          lock_t lock_inner(worker.mut);
-          worker.work = std::move(work);
+          lock_t lock_inner(worker_i.mut);
+          worker_i.work = std::move(work);
           }
-          worker.work_ready.notify_one();
+          worker_i.work_ready.notify_one();
           return;
           }
 
