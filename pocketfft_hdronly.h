@@ -1152,7 +1152,7 @@ template<bool fwd, typename T> void pass4 (size_t ido, size_t l1,
 
 #define POCKETFFT_PARTSTEP5b(u1,u2,twar,twbr,twai,twbi) \
         { \
-        T ca,cb,da,db; \
+        T ca,cb; \
         ca.r=t0.r+twar*t1.r+twbr*t2.r; \
         ca.i=t0.i+twar*t1.i+twbr*t2.i; \
         cb.i=twai*t4.r twbi*t3.r; \
