@@ -2989,8 +2989,8 @@ class arr_info
     stride_t str;
 
   public:
-    arr_info(shape_t shape_, const stride_t &stride_)
-      : shp(std::move(shape_)), str(stride_) {}
+    arr_info(shape_t shape_, stride_t stride_)
+      : shp(std::move(shape_)), str(std::move(stride_)) {}
     size_t ndim() const { return shp.size(); }
     size_t size() const { return util::prod(shp); }
     const shape_t &shape() const { return shp; }
