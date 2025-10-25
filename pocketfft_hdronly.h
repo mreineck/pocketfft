@@ -793,14 +793,14 @@ class thread_pool
         std::atomic<size_t> &unscheduled_tasks,
         concurrent_queue<std::function<void()>> &overflow_work)
         {
-        using lock_t = std::unique_lock<std::mutex>;
+        using lock_t_inner = std::unique_lock<std::mutex>;
         bool expect_work = true;
         while (!shutdown_flag || expect_work)
           {
           std::function<void()> local_work;
           if (expect_work || unscheduled_tasks == 0)
             {
-            lock_t lock(mut);
+            lock_t_inner lock(mut);
             // Wait until there is work to be executed
             work_ready.wait(lock, [&]{ return (work || shutdown_flag); });
             local_work.swap(work);
