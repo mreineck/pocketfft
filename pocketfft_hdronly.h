@@ -168,6 +168,7 @@ template<> struct VLEN<double> { static constexpr size_t val=2; };
 // with ASAN's heap redzone and causes intermittent bus errors.
 inline void *aligned_alloc(size_t align, size_t size)
   {
+  align = std::max(align, sizeof(void*)); // posix_memalign requires align >= sizeof(void*)
   void *ptr = nullptr;
   if (posix_memalign(&ptr, align, size) != 0)
     throw std::bad_alloc();
