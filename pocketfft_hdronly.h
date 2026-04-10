@@ -53,6 +53,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #error This file requires at least C++11 support.
 #endif
 
+#ifndef POCKETFFT_NAMESPACE
+#define POCKETFFT_NAMESPACE pocketfft
+#endif
+
 #ifndef POCKETFFT_CACHE_SIZE
 #define POCKETFFT_CACHE_SIZE 0
 #endif
@@ -98,7 +102,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define POCKETFFT_RESTRICT
 #endif
 
-namespace pocketfft {
+namespace POCKETFFT_NAMESPACE {
 
 namespace detail {
 using std::size_t;
