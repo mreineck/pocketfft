@@ -82,6 +82,14 @@ POCKETFFT_NO_MULTITHREADING:\
 if defined, multi-threading will be disabled.\
 Default: undefined
 
+POCKETFFT_NO_EXCEPTIONS:\
+if defined, exception handling is disabled: error conditions that would\
+normally throw an exception (invalid arguments, allocation failure,\
+internal consistency errors) instead print a diagnostic message to\
+stderr and call abort(). This allows using pocketfft in programs that\
+are compiled with exception handling disabled (e.g. -fno-exceptions).\
+Default: undefined
+
 POCKETFFT_NAMESPACE:\
 if defined, this name will be used as the namespace enclosing all of
 the pocketfft functionality.\
